@@ -15,10 +15,4 @@ When commits are pushed to GitHub, they are checked with the [Flake8 linter](htt
 
     pip install --upgrade -r requirements_dev.txt
 
-They can then be run as follows:
-
-    flake8 inconsistent_preferences tests
-    black inconsistent_preferences tests
-    mypy inconsistent_preferences tests
-    isort inconsistent_preferences tests
-    pytest
+They can then be run using `./lint.sh`.
