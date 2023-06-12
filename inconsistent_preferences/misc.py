@@ -1,5 +1,6 @@
 import numpy as np
 
+
 def collect_trajectories(env, policy, num_episodes, render=False):
     trajectories = []
     for _ in range(num_episodes):
