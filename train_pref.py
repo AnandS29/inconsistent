@@ -36,22 +36,24 @@ parser.add_argument('--initial_comparison_frac', type=float, default=0.1)
 parser.add_argument('--noise', type=float, default=0.0)
 
 args  = parser.parse_args()
+rng = np.random.default_rng(args.seed)
 
 ########## 2. Set up environment and algorithm ##########
 
-venv, noise_fn, frag_length = make_env(args.env, noise=args.noise, parallel=args.parallel)
+venv, noise_fn, frag_length = make_env(args.env, rng=rng, noise=args.noise, parallel=args.parallel)
 
 reward_net = BasicRewardNet(
     venv.observation_space, venv.action_space, normalize_input_layer=RunningNorm
 )
 
-fragmenter = preference_comparisons.RandomFragmenter(warning_threshold=0, seed=0)
+fragmenter = preference_comparisons.RandomFragmenter(warning_threshold=0, rng=rng)
 gatherer = NoisyGatherer(noise_fn=noise_fn, seed=0)
 preference_model = preference_comparisons.PreferenceModel(reward_net)
 reward_trainer = preference_comparisons.BasicRewardTrainer(
-    model=reward_net,
-    loss=preference_comparisons.CrossEntropyRewardLoss(preference_model),
+    preference_model=preference_model,
+    loss=preference_comparisons.CrossEntropyRewardLoss(),
     epochs=args.epochs_reward,
+    rng=rng,
 )
 
 make_agent = lambda: PPO(
@@ -77,7 +79,7 @@ trajectory_generator = preference_comparisons.AgentTrainer(
     reward_fn=reward_net,
     venv=venv,
     exploration_frac=0.0,
-    seed=0,
+    rng=rng,
 )
 
 pref_comparisons = preference_comparisons.PreferenceComparisons(
@@ -91,7 +93,6 @@ pref_comparisons = preference_comparisons.PreferenceComparisons(
     transition_oversampling=1,
     initial_comparison_frac=args.initial_comparison_frac,
     allow_variable_horizon=False,
-    seed=args.seed,
     initial_epoch_multiplier=1,
 )
 

@@ -2,7 +2,7 @@ from envs.reward_env import *
 import numpy as np
 from imitation.util.util import make_vec_env
 
-def make_env(env_name, noise=0, parallel=1):
+def make_env(env_name, rng, noise=0, parallel=1):
     venv = None
     if env_name== "linear1d":
         env_name = "StatelessEnv-v0"
@@ -54,6 +54,6 @@ def make_env(env_name, noise=0, parallel=1):
     if noise == 0:
         noise_fn = lambda obs, acts, rews, infos: rews
 
-    venv = make_vec_env(env_name, n_envs=parallel)
+    venv = make_vec_env(env_name, n_envs=parallel, rng=rng)
 
     return venv, noise_fn, frag_length
