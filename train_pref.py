@@ -13,9 +13,10 @@ import os
 import matplotlib.pyplot as plt
 import numpy as np
 from misc import collect_trajectories
+from pylab import figure, cm
 
 ########## 1. Parse arguments ##########
-# Example: python3 test_pref.py --env linear1d --stats --verbose
+# Example: python3 train_pref.py --env linear1d --stats --verbose
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--env', type=str, default="linear1d")
@@ -37,6 +38,11 @@ parser.add_argument('--noise', type=float, default=0.0)
 
 args  = parser.parse_args()
 rng = np.random.default_rng(args.seed)
+
+noise_name = "noise_"+str(args.noise) if args.noise != 0 else "no_noise"
+# training_type = "pref" if args.pref else "rl"
+# filename = f"{args.env}_{args.algo}_{args.timesteps}_{training_type}_{noise_name}_{args.comparisons}"
+filename = f"{args.env}_{args.algo}_{args.timesteps}_{noise_name}_{args.comparisons}"
 
 ########## 2. Set up environment and algorithm ##########
 
@@ -140,7 +146,8 @@ if args.stats:
         plt.savefig(f"plots/{filename}r_fn.png")
     if args.env == "multi1d":
         # Plot actions
-        trajs = collect_trajectories(venv, learner.policy, args.eval_episodes)
+        goal = np.array([0.2, 0.5, 0.8])
+        trajs = collect_trajectories(venv, agent.policy, args.eval_episodes)
         acts = {g:[] for g in goal}
         for traj in trajs:
             for t in range(len(traj)):
