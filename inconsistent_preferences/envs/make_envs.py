@@ -62,7 +62,7 @@ def make_env(env_name, rng, noise=0, parallel=1):
         noise = 0
 
     if noise == 0:
-        noise_fn = lambda obs, acts, rews, infos: rews
+        noise_fn = lambda obs, acts, rews, infos: rews  # noqa: F811
 
     venv = make_vec_env(env_name, n_envs=parallel, rng=rng)
 

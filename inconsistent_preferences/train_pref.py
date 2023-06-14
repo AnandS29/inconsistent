@@ -1,6 +1,6 @@
 import argparse
 import os
-from typing import Optional
+from typing import Dict, List, Optional
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -9,6 +9,7 @@ from imitation.policies.base import FeedForward32Policy, NormalizeFeaturesExtrac
 from imitation.rewards.reward_nets import BasicRewardNet
 from imitation.rewards.reward_wrapper import RewardVecEnvWrapper
 from imitation.util.networks import RunningNorm
+from pylab import cm
 from stable_baselines3 import PPO
 from stable_baselines3.common.evaluation import evaluate_policy
 
@@ -37,6 +38,9 @@ def train_pref(
 ):
     rng = np.random.default_rng(seed)
 
+    noise_name = "noise_" + str(noise) if noise != 0 else "no_noise"
+    filename = f"{env_name}_{algo}_{timesteps}_{noise_name}_{comparisons}"
+
     ########## 2. Set up environment and algorithm ##########
 
     venv, noise_fn, frag_length = make_env(
@@ -57,7 +61,7 @@ def train_pref(
         rng=rng,
     )
 
-    make_agent = lambda: PPO(
+    make_agent = lambda venv: PPO(
         policy=FeedForward32Policy,
         policy_kwargs=dict(
             features_extractor_class=NormalizeFeaturesExtractor,
@@ -72,7 +76,7 @@ def train_pref(
         n_epochs=epochs_agent,
     )
 
-    agent = make_agent()
+    agent = make_agent(venv)
 
     trajectory_generator = preference_comparisons.AgentTrainer(
         algorithm=agent,
@@ -105,7 +109,7 @@ def train_pref(
 
     ########## 4. Train policy on learned reward ##########
     learned_reward_venv = RewardVecEnvWrapper(venv, reward_net.predict)
-    agent = make_agent()
+    agent = make_agent(learned_reward_venv)
     agent.learn(timesteps)
 
     ########## 5. Evaluate ##########
@@ -118,11 +122,8 @@ def train_pref(
     if stats:
         print("Saving stats...")
         filename = env_name + "/" + filename + "/"
-        try:
-            print("Making directory...")
-            os.makedirs("plots/" + filename)
-        except:
-            print("Directory exists")
+        print("Making directory...")
+        os.makedirs("plots/" + filename, exist_ok=True)
 
         print(f"File Dir: {filename}")
 
@@ -145,8 +146,9 @@ def train_pref(
             plt.savefig(f"plots/{filename}r_fn.png")
         if env_name == "multi1d":
             # Plot actions
-            trajs = collect_trajectories(venv, learner.policy, eval_episodes)
-            acts = {g: [] for g in goal}
+            goal = np.array([0.2, 0.5, 0.8])
+            trajs = collect_trajectories(venv, agent.policy, args.eval_episodes)
+            acts: Dict[float, List[float]] = {g: [] for g in goal}
             for traj in trajs:
                 for t in range(len(traj)):
                     a = traj[t][1][0]
@@ -201,7 +203,7 @@ def train_pref(
 
 if __name__ == "__main__":
     ########## 1. Parse arguments ##########
-    # Example: python3 test_pref.py --env linear1d --stats --verbose
+    # Example: python3 train_pref.py --env linear1d --stats --verbose
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--env", type=str, default="linear1d")
