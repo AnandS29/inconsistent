@@ -1,15 +1,11 @@
 from typing import Optional, Sequence, Tuple
-from imitation.util import logger as imit_logger
-from imitation.algorithms import preference_comparisons
-from imitation.data import rollout, types, wrappers
+
 import numpy as np
-from imitation.data.types import (
-    AnyPath,
-    TrajectoryPair,
-    TrajectoryWithRew,
-    TrajectoryWithRewPair,
-    Transitions,
-)
+from imitation.algorithms import preference_comparisons
+from imitation.data import rollout
+from imitation.data.types import TrajectoryWithRewPair
+from imitation.util import logger as imit_logger
+
 
 class NoisyGatherer(preference_comparisons.PreferenceGatherer):
     """Computes noisy preferences using perturbed ground-truth environment rewards."""
@@ -38,7 +34,7 @@ class NoisyGatherer(preference_comparisons.PreferenceGatherer):
     def __call__(self, fragment_pairs: Sequence[TrajectoryWithRewPair]) -> np.ndarray:
         """Computes probability fragment 1 is preferred over fragment 2."""
         returns1, returns2 = self._reward_sums(fragment_pairs)
-        comparison = (returns1 > returns2).astype('float32')
+        comparison = (returns1 > returns2).astype("float32")
         return comparison
 
     def _perturb_rews(self, f1):
@@ -48,8 +44,12 @@ class NoisyGatherer(preference_comparisons.PreferenceGatherer):
         rews1, rews2 = zip(
             *[
                 (
-                    rollout.discounted_sum(self._perturb_rews(f1), self.discount_factor),
-                    rollout.discounted_sum(self._perturb_rews(f2), self.discount_factor),
+                    rollout.discounted_sum(
+                        self._perturb_rews(f1), self.discount_factor
+                    ),
+                    rollout.discounted_sum(
+                        self._perturb_rews(f2), self.discount_factor
+                    ),
                 )
                 for f1, f2 in fragment_pairs
             ],

@@ -1,0 +1,4 @@
+isort inconsistent_preferences tests
+black inconsistent_preferences tests
+flake8 inconsistent_preferences tests
+mypy inconsistent_preferences tests
