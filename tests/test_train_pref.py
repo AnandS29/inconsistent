@@ -22,6 +22,7 @@ def test_1d():
         reward_model="default",
     )
 
+
 def test_1d_mean_and_variance():
     train_pref(
         env_name="linear1d",
