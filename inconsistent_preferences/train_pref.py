@@ -1,6 +1,6 @@
 import argparse
 import os
-from typing import Dict, List, Optional
+from typing import Dict, List, Literal, Optional, Type, Union
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -14,11 +14,16 @@ from stable_baselines3 import PPO
 from stable_baselines3.common.evaluation import evaluate_policy
 
 from .algorithm.gatherer import NoisyGatherer
+from .algorithm.variance_estimation import (
+    BaseRewardNetWithUncertainty,
+    MeanAndVariancePreferenceModel,
+    MeanAndVarianceRewardNet,
+)
 from .envs.make_envs import make_env
 from .misc import collect_trajectories
 
 
-def train_pref(
+def train_pref(  # noqa: C901
     env_name: str,
     timesteps: int,
     epochs_reward: int,
@@ -35,11 +40,14 @@ def train_pref(
     parallel: int,
     initial_comparison_frac: float,
     noise: float,
+    reward_model: Literal["default", "mean_and_variance"],
 ):
     rng = np.random.default_rng(seed)
 
     noise_name = "noise_" + str(noise) if noise != 0 else "no_noise"
-    filename = f"{env_name}_{algo}_{timesteps}_{noise_name}_{comparisons}"
+    filename = (
+        f"{env_name}_{algo}_{timesteps}_{noise_name}_{comparisons}_{reward_model}"
+    )
 
     ########## 2. Set up environment and algorithm ##########
 
@@ -47,13 +55,21 @@ def train_pref(
         env_name, rng=rng, noise=noise, parallel=parallel
     )
 
-    reward_net = BasicRewardNet(
+    reward_net_class: Union[Type[BasicRewardNet], Type[BaseRewardNetWithUncertainty]]
+    preference_model_class: Type[preference_comparisons.PreferenceModel]
+    if reward_model == "default":
+        reward_net_class = BasicRewardNet
+        preference_model_class = preference_comparisons.PreferenceModel
+    elif reward_model == "mean_and_variance":
+        reward_net_class = MeanAndVarianceRewardNet
+        preference_model_class = MeanAndVariancePreferenceModel
+    reward_net = reward_net_class(
         venv.observation_space, venv.action_space, normalize_input_layer=RunningNorm
     )
 
     fragmenter = preference_comparisons.RandomFragmenter(warning_threshold=0, rng=rng)
     gatherer = NoisyGatherer(noise_fn=noise_fn, seed=0)
-    preference_model = preference_comparisons.PreferenceModel(reward_net)
+    preference_model = preference_model_class(reward_net)
     reward_trainer = preference_comparisons.BasicRewardTrainer(
         preference_model=preference_model,
         loss=preference_comparisons.CrossEntropyRewardLoss(),
@@ -129,18 +145,36 @@ def train_pref(
 
         if env_name == "linear1d":
             vals = []
+            stds = []
             actions = np.arange(0, 1, 0.01)
             plt.title("Reward Function")
             for i in actions:
+                kwargs = {}
+                if reward_model == "mean_and_variance":
+                    kwargs = {"return_vars": True}
                 val = reward_net.predict(
                     np.array([[0]]),
                     np.array([[i]]),
                     np.array([[0]]),
                     np.array([[True]]),
+                    **kwargs,
                 )
+                if reward_model == "mean_and_variance":
+                    val, log_std = val
+                    stds.append(np.exp(log_std))
                 vals.append(val)
             plt.figure()
             plt.plot(actions, vals)
+            if stds:
+                vals_arr = np.array(vals)
+                stds_arr = np.array(stds)
+                plt.fill_between(
+                    actions,
+                    vals_arr - stds_arr,
+                    vals_arr + stds_arr,
+                    alpha=0.3,
+                    fc="C0",
+                )
             plt.xlabel("Action")
             plt.ylabel("Reward")
             plt.savefig(f"plots/{filename}r_fn.png")
@@ -222,6 +256,12 @@ if __name__ == "__main__":
     parser.add_argument("--parallel", type=int, default=1)
     parser.add_argument("--initial_comparison_frac", type=float, default=0.1)
     parser.add_argument("--noise", type=float, default=0.0)
+    parser.add_argument(
+        "--reward_model",
+        type=str,
+        default="default",
+        choices=["default", "mean_and_variance"],
+    )
 
     args = parser.parse_args()
 
@@ -242,4 +282,5 @@ if __name__ == "__main__":
         args.parallel,
         args.initial_comparison_frac,
         args.noise,
+        args.reward_model,
     )
