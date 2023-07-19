@@ -5,3 +5,4 @@ mypy
 pytest
 pytest-timeout
 isort
+types-tqdm
