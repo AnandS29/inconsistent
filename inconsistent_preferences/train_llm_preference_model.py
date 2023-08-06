@@ -7,7 +7,7 @@ import numpy as np
 # import evaluate
 import torch
 import torch.nn.functional as F  # noqa: N812
-from datasets import Dataset, load_dataset, concatenate_datasets
+from datasets import Dataset, concatenate_datasets, load_dataset
 from peft import LoraConfig, TaskType, get_peft_model
 from torch import nn
 from torch.optim.lr_scheduler import LambdaLR
@@ -315,7 +315,7 @@ if __name__ == "__main__":
             eval_dataset.select(range(script_args.eval_subset // len(eval_datasets)))
             for eval_dataset in eval_datasets
         ]
-    
+
     train_dataset = concatenate_datasets(train_datasets)
     eval_dataset = concatenate_datasets(eval_datasets)
 
