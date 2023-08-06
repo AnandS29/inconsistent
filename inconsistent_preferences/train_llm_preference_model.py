@@ -7,7 +7,7 @@ import numpy as np
 # import evaluate
 import torch
 import torch.nn.functional as F  # noqa: N812
-from datasets import load_dataset
+from datasets import Dataset, load_dataset, concatenate_datasets
 from peft import LoraConfig, TaskType, get_peft_model
 from torch import nn
 from torch.optim.lr_scheduler import LambdaLR
@@ -24,6 +24,7 @@ from transformers.utils import PaddingStrategy
 from typing_extensions import Literal, TypeAlias
 
 RewardModelType: TypeAlias = Literal["base", "mean_and_variance", "categorical"]
+DataSubset: TypeAlias = Literal["both", "helpful", "harmless"]
 
 
 # Define and parse arguments.
@@ -56,6 +57,13 @@ class ScriptArguments:
         metadata={
             "help": "The model that you want to train from the Hugging Face hub. "
             "E.g. gpt2, gpt2-xl, bert, etc."
+        },
+    )
+    data_subset: str = field(
+        default="both",
+        metadata={
+            "help": "Which subset of the data to use. You can choose between 'both', "
+            "'helpful', or 'harmless'."
         },
     )
     reward_model_type: str = field(
@@ -278,16 +286,38 @@ if __name__ == "__main__":
     parser = HfArgumentParser(ScriptArguments)
     script_args: ScriptArguments = parser.parse_args_into_dataclasses()[0]
 
-    train_dataset = load_dataset(
-        "Anthropic/hh-rlhf", data_dir="harmless-base", split="train"
-    )
+    data_subset = cast(DataSubset, script_args.data_subset)
+    train_datasets: List[Dataset] = []
+    eval_datasets: List[Dataset] = []
+
+    if data_subset == "harmless" or data_subset == "both":
+        train_datasets.append(
+            load_dataset("Anthropic/hh-rlhf", data_dir="harmless-base", split="train")
+        )
+        eval_datasets.append(
+            load_dataset("Anthropic/hh-rlhf", data_dir="harmless-base", split="test")
+        )
+    if data_subset == "helpful" or data_subset == "both":
+        train_datasets.append(
+            load_dataset("Anthropic/hh-rlhf", data_dir="helpful-base", split="train")
+        )
+        eval_datasets.append(
+            load_dataset("Anthropic/hh-rlhf", data_dir="helpful-base", split="test")
+        )
+
     if script_args.train_subset > 0:
-        train_dataset = train_dataset.select(range(script_args.train_subset))
-    eval_dataset = load_dataset(
-        "Anthropic/hh-rlhf", data_dir="harmless-base", split="test"
-    )
+        train_datasets = [
+            train_dataset.select(range(script_args.train_subset // len(train_datasets)))
+            for train_dataset in train_datasets
+        ]
     if script_args.eval_subset > 0:
-        eval_dataset = eval_dataset.select(range(script_args.eval_subset))
+        eval_datasets = [
+            eval_dataset.select(range(script_args.eval_subset // len(eval_datasets)))
+            for eval_dataset in eval_datasets
+        ]
+    
+    train_dataset = concatenate_datasets(train_datasets)
+    eval_dataset = concatenate_datasets(eval_datasets)
 
     reward_model_type = cast(RewardModelType, script_args.reward_model_type)
 
@@ -295,7 +325,8 @@ if __name__ == "__main__":
     # are using deepspeed.
     model_name_split = script_args.model_name.split("/")[-1]
     output_name = (
-        f"data/logs/{reward_model_type}_{model_name_split}_peft_hh-rlhf_rmts"
+        f"data/logs/{data_subset}/"
+        f"{reward_model_type}_{model_name_split}_peft_hh-rlhf_rmts"
         f"__{script_args.train_subset}_{script_args.learning_rate}"
         f"_{script_args.lr_scheduler_type}_{script_args.num_train_epochs}"
     )
@@ -317,7 +348,7 @@ if __name__ == "__main__":
         num_train_epochs=script_args.num_train_epochs,
         weight_decay=script_args.weight_decay,
         evaluation_strategy="steps",
-        eval_steps=10,
+        eval_steps=1000,
         save_strategy="steps",
         save_steps=1000,
         gradient_accumulation_steps=script_args.gradient_accumulation_steps,
