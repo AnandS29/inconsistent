@@ -1,0 +1,134 @@
+import os
+from dataclasses import dataclass, field
+from typing import Optional
+
+# import evaluate
+import torch
+from datasets import Dataset, load_dataset
+from peft import LoraConfig, PeftModel
+from transformers import (
+    AutoModelForSequenceClassification,
+    AutoTokenizer,
+    HfArgumentParser,
+)
+
+from .train_llm_preference_model import HHRLHFPreprocessor
+
+
+@dataclass
+class ScriptArguments:
+    reward_model_checkpoint: str = field(
+        metadata={"help": "Path to the trained reward model checkpoint."}
+    )
+    output: Optional[str] = field(
+        default=None,
+        metadata={"help": "JSONL file where results are stored."},
+    )
+    per_device_eval_batch_size: Optional[int] = field(default=1)
+    model_name: Optional[str] = field(
+        default="gpt2",
+        metadata={
+            "help": "The model that you want to train from the Hugging Face hub. "
+            "E.g. gpt2, gpt2-xl, bert, etc."
+        },
+    )
+    tokenizer_name: Optional[str] = field(
+        default=None,
+        metadata={
+            "help": "The tokenizer for your model, if left empty will use the default "
+            "for your model",
+        },
+    )
+    bf16: Optional[bool] = field(
+        default=True,
+        metadata={
+            "help": "This essentially cuts the training time in half if you want to "
+            "sacrifice a little precision and have a supported GPU."
+        },
+    )
+    eval_subset: Optional[int] = field(
+        default=0,
+        metadata={"help": "The size of the subset of the eval data to use"},
+    )
+    num_labels: Optional[int] = field(
+        default=1,
+        metadata={"help": "The number of outputs from the model."},
+    )
+    max_length: Optional[int] = field(default=512)
+
+
+if __name__ == "__main__":
+    parser = HfArgumentParser(ScriptArguments)
+    script_args = parser.parse_args_into_dataclasses()[0]
+
+    output_fname = script_args.output
+    if output_fname is None:
+        output_fname = os.path.join(
+            script_args.reward_model_checkpoint, "eval_results.jsonl"
+        )
+
+    eval_dataset: Dataset = load_dataset(
+        "Anthropic/hh-rlhf", data_dir="harmless-base", split="test"
+    )
+    if script_args.eval_subset > 0:
+        eval_dataset = eval_dataset.select(range(script_args.eval_subset))
+
+    # Load the value-head model and tokenizer.
+    tokenizer_name = (
+        script_args.tokenizer_name
+        if script_args.tokenizer_name is not None
+        else script_args.model_name
+    )
+    tokenizer = AutoTokenizer.from_pretrained(tokenizer_name, use_auth_token=True)
+    tokenizer.pad_token = tokenizer.eos_token
+
+    peft_config = LoraConfig.from_pretrained(script_args.reward_model_checkpoint)
+    model = AutoModelForSequenceClassification.from_pretrained(
+        script_args.model_name,
+        num_labels=script_args.num_labels,
+        torch_dtype=torch.bfloat16,
+    )
+    model = PeftModel.from_pretrained(
+        model, script_args.reward_model_checkpoint, is_trainable=False
+    )
+    model = model.to("cuda")
+
+    # Need to do this for gpt2, because it doesn't have an official pad token.
+    tokenizer.pad_token = tokenizer.eos_token
+    model.config.pad_token_id = tokenizer.eos_token_id
+    num_proc = 24  # Can adjust to be higher if you have more processors.
+
+    eval_dataset = eval_dataset.map(
+        HHRLHFPreprocessor(tokenizer, padding=True, max_length=script_args.max_length),
+        batched=True,
+        num_proc=num_proc,
+    )
+    eval_dataset = eval_dataset.filter(
+        lambda x: len(x["input_ids_chosen"]) <= script_args.max_length
+        and len(x["input_ids_rejected"]) <= script_args.max_length
+    )
+
+    def compute_predictions(example):
+        output = {}
+        for key in ["chosen", "rejected"]:
+            input_ids = torch.tensor(example[f"input_ids_{key}"]).cuda()
+            attention_mask = torch.tensor(example[f"attention_mask_{key}"]).cuda()
+            if len(input_ids.size()) == 1:
+                input_ids = input_ids.unsqueeze(0)
+                attention_mask = attention_mask.unsqueeze(0)
+            output[f"reward_output_{key}"] = model(
+                input_ids=input_ids,
+                attention_mask=attention_mask,
+            )[0].tolist()
+        return output
+
+    eval_results = eval_dataset.map(
+        compute_predictions,
+        remove_columns=[
+            "input_ids_chosen",
+            "input_ids_rejected",
+            "attention_mask_chosen",
+            "attention_mask_rejected",
+        ],
+    )
+    eval_results.to_json(output_fname, orient="records", lines=True)
