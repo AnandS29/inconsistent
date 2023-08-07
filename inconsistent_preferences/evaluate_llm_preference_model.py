@@ -80,7 +80,6 @@ if __name__ == "__main__":
         else script_args.model_name
     )
     tokenizer = AutoTokenizer.from_pretrained(tokenizer_name, use_auth_token=True)
-    tokenizer.pad_token = tokenizer.eos_token
 
     peft_config = LoraConfig.from_pretrained(script_args.reward_model_checkpoint)
     model = AutoModelForSequenceClassification.from_pretrained(
@@ -91,11 +90,14 @@ if __name__ == "__main__":
     model = PeftModel.from_pretrained(
         model, script_args.reward_model_checkpoint, is_trainable=False
     )
-    model = model.to("cuda")
+    model = model.to("cuda").eval()
 
-    # Need to do this for gpt2, because it doesn't have an official pad token.
+    # Need to do this for GPT2 and Llama because they doesn't have official pad tokens.
     tokenizer.pad_token = tokenizer.eos_token
-    model.config.pad_token_id = tokenizer.eos_token_id
+    tokenizer.pad_token_id = tokenizer.eos_token_id
+    model.config.pad_token_id = tokenizer.pad_token_id
+    tokenizer.padding_side = "right"
+
     num_proc = 24  # Can adjust to be higher if you have more processors.
 
     eval_dataset = eval_dataset.map(
@@ -111,15 +113,20 @@ if __name__ == "__main__":
     def compute_predictions(example):
         output = {}
         for key in ["chosen", "rejected"]:
-            input_ids = torch.tensor(example[f"input_ids_{key}"]).cuda()
-            attention_mask = torch.tensor(example[f"attention_mask_{key}"]).cuda()
-            if len(input_ids.size()) == 1:
-                input_ids = input_ids.unsqueeze(0)
-                attention_mask = attention_mask.unsqueeze(0)
-            output[f"reward_output_{key}"] = model(
-                input_ids=input_ids,
-                attention_mask=attention_mask,
-            )[0].tolist()
+            batch = tokenizer.pad(
+                {
+                    "input_ids": example[f"input_ids_{key}"],
+                },
+                padding=True,
+                max_length=script_args.max_length,
+                pad_to_multiple_of=64,
+                return_tensors="pt",
+            )
+            with torch.no_grad():
+                output[f"reward_output_{key}"] = model(
+                    input_ids=batch["input_ids"].to("cuda"),
+                    attention_mask=batch["attention_mask"].to("cuda"),
+                )[0].tolist()
         return output
 
     eval_results = eval_dataset.map(
@@ -130,5 +137,7 @@ if __name__ == "__main__":
             "attention_mask_chosen",
             "attention_mask_rejected",
         ],
+        batched=True,
+        batch_size=script_args.per_device_eval_batch_size,
     )
     eval_results.to_json(output_fname, orient="records", lines=True)

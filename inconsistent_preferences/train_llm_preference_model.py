@@ -178,14 +178,25 @@ class RewardTrainer(Trainer):
         return torch.mean(self.per_sample_loss(rewards_chosen, rewards_rejected))
 
     def compute_loss(self, model, inputs, return_outputs=False):
-        rewards_chosen = model(
-            input_ids=inputs["input_ids_chosen"],
-            attention_mask=inputs["attention_mask_chosen"],
+        all_rewards = model(
+            torch.concatenate(
+                [
+                    inputs["input_ids_chosen"],
+                    inputs["input_ids_rejected"],
+                ],
+                dim=0,
+            ),
+            torch.concatenate(
+                [
+                    inputs["attention_mask_chosen"],
+                    inputs["attention_mask_rejected"],
+                ],
+                dim=0,
+            ),
         )[0]
-        rewards_rejected = model(
-            input_ids=inputs["input_ids_rejected"],
-            attention_mask=inputs["attention_mask_rejected"],
-        )[0]
+        all_rewards = all_rewards.reshape(2, -1, all_rewards.shape[-1])
+        rewards_chosen = all_rewards[0]
+        rewards_rejected = all_rewards[1]
         loss = self.loss(rewards_chosen, rewards_rejected)
         if return_outputs:
             return loss, {
@@ -370,7 +381,6 @@ if __name__ == "__main__":
         else script_args.model_name
     )
     tokenizer = AutoTokenizer.from_pretrained(tokenizer_name, use_auth_token=True)
-    tokenizer.pad_token = tokenizer.eos_token
 
     peft_config = LoraConfig(
         task_type=TaskType.SEQ_CLS,
@@ -397,9 +407,12 @@ if __name__ == "__main__":
     model = get_peft_model(model, peft_config)
     model.print_trainable_parameters()
 
-    # Need to do this for gpt2, because it doesn't have an official pad token.
+    # Need to do this for GPT2 and Llama because they doesn't have official pad tokens.
     tokenizer.pad_token = tokenizer.eos_token
-    model.config.pad_token_id = tokenizer.eos_token_id
+    tokenizer.pad_token_id = tokenizer.eos_token_id
+    model.config.pad_token_id = tokenizer.pad_token_id
+    tokenizer.padding_side = "right"
+
     model.config.use_cache = not script_args.gradient_checkpointing
     num_proc = 24  # Can adjust to be higher if you have more processors.
     original_columns = train_dataset.column_names
@@ -452,28 +465,24 @@ if __name__ == "__main__":
                         "attention_mask": feature["attention_mask_rejected"],
                     }
                 )
-            batch_chosen = self.tokenizer.pad(
-                features_chosen,
+            batch = self.tokenizer.pad(
+                features_chosen + features_rejected,
                 padding=self.padding,
                 max_length=self.max_length,
                 pad_to_multiple_of=self.pad_to_multiple_of,
                 return_tensors=self.return_tensors,
             )
-            batch_rejected = self.tokenizer.pad(
-                features_rejected,
-                padding=self.padding,
-                max_length=self.max_length,
-                pad_to_multiple_of=self.pad_to_multiple_of,
-                return_tensors=self.return_tensors,
+            input_ids = batch["input_ids"].view(2, -1, batch["input_ids"].shape[-1])
+            attention_mask = batch["attention_mask"].view(
+                2, -1, batch["attention_mask"].shape[-1]
             )
-            batch = {
-                "input_ids_chosen": batch_chosen["input_ids"],
-                "attention_mask_chosen": batch_chosen["attention_mask"].detach(),
-                "input_ids_rejected": batch_rejected["input_ids"],
-                "attention_mask_rejected": batch_rejected["attention_mask"].detach(),
+            return {
+                "input_ids_chosen": input_ids[0],
+                "attention_mask_chosen": attention_mask[0],
+                "input_ids_rejected": input_ids[1],
+                "attention_mask_rejected": attention_mask[1],
                 "return_loss": True,
             }
-            return batch
 
     # Train the model, woohoo.
     trainer = trainer_class(
@@ -483,7 +492,9 @@ if __name__ == "__main__":
         eval_dataset=eval_dataset,
         compute_metrics=trainer_class.compute_metrics,
         data_collator=RewardDataCollatorWithPadding(
-            tokenizer=tokenizer, max_length=script_args.max_length
+            tokenizer=tokenizer,
+            max_length=script_args.max_length,
+            pad_to_multiple_of=64,
         ),
         **trainer_kwargs,
     )
