@@ -29,7 +29,14 @@ class ScriptArguments:
     output: str = field(
         metadata={"help": "JSONL file for the resulting dataset."},
     )
-    per_device_eval_batch_size: Optional[int] = field(default=1)
+    split: str = field(
+        default="train",
+        metadata={
+            "help": "Which split of the data to use. You can choose between 'train' "
+            "or 'test'."
+        },
+    )
+    batch_size: Optional[int] = field(default=1)
     model_name: Optional[str] = field(
         default="gpt2",
         metadata={
@@ -82,7 +89,7 @@ if __name__ == "__main__":
             ("helpful", script_args.harmless_model_checkpoint),
         ],
     ):
-        original_dataset = get_hh_rlhf_dataset(data_subset, "train")
+        original_dataset = get_hh_rlhf_dataset(data_subset, split=script_args.split)
 
         peft_config = LoraConfig.from_pretrained(other_model_checkpoint)
         reward_model = PeftModel.from_pretrained(
@@ -138,7 +145,7 @@ if __name__ == "__main__":
                 "attention_mask_rejected",
             ],
             batched=True,
-            batch_size=script_args.per_device_eval_batch_size,
+            batch_size=script_args.batch_size,
         )
 
         def synthetically_label(example):
@@ -162,7 +169,7 @@ if __name__ == "__main__":
                         example["reward_output_rejected"],
                         example["reward_output_chosen"],
                     )
-            
+
             return example
 
         new_dataset = eval_results.map(
