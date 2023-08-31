@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from typing import List, Optional, Tuple, cast
+from typing import List, Literal, Optional, Tuple, cast
 
 # import evaluate
 import torch
@@ -89,7 +89,9 @@ if __name__ == "__main__":
             ("helpful", script_args.harmless_model_checkpoint),
         ],
     ):
-        original_dataset = get_hh_rlhf_dataset(data_subset, split=script_args.split)
+        original_dataset = get_hh_rlhf_dataset(
+            data_subset, split=cast(Literal["train", "test"], script_args.split)
+        )
 
         peft_config = LoraConfig.from_pretrained(other_model_checkpoint)
         reward_model = PeftModel.from_pretrained(
