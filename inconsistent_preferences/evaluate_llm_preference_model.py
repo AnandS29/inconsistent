@@ -1,10 +1,9 @@
 import os
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Optional, cast
 
 # import evaluate
 import torch
-from datasets import Dataset, load_dataset
 from peft import LoraConfig, PeftModel
 from transformers import (
     AutoModelForSequenceClassification,
@@ -12,7 +11,11 @@ from transformers import (
     HfArgumentParser,
 )
 
-from .train_llm_preference_model import HHRLHFPreprocessor
+from .train_llm_preference_model import (
+    DataSubset,
+    HHRLHFPreprocessor,
+    get_hh_rlhf_dataset,
+)
 
 
 @dataclass
@@ -46,6 +49,13 @@ class ScriptArguments:
             "sacrifice a little precision and have a supported GPU."
         },
     )
+    data_subset: str = field(
+        default="both",
+        metadata={
+            "help": "Which subset of the data to use. You can choose between 'both', "
+            "'helpful', or 'harmless'."
+        },
+    )
     eval_subset: Optional[int] = field(
         default=0,
         metadata={"help": "The size of the subset of the eval data to use"},
@@ -61,17 +71,15 @@ if __name__ == "__main__":
     parser = HfArgumentParser(ScriptArguments)
     script_args = parser.parse_args_into_dataclasses()[0]
 
+    data_subset = cast(DataSubset, script_args.data_subset)
+
     output_fname = script_args.output
     if output_fname is None:
         output_fname = os.path.join(
-            script_args.reward_model_checkpoint, "eval_results.jsonl"
+            script_args.reward_model_checkpoint, f"eval_results_{data_subset}.jsonl"
         )
 
-    eval_dataset: Dataset = load_dataset(
-        "Anthropic/hh-rlhf", data_dir="harmless-base", split="test"
-    )
-    if script_args.eval_subset > 0:
-        eval_dataset = eval_dataset.select(range(script_args.eval_subset))
+    eval_dataset = get_hh_rlhf_dataset(data_subset, "test", script_args.eval_subset)
 
     # Load the value-head model and tokenizer.
     tokenizer_name = (

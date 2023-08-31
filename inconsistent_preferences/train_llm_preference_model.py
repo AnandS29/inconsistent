@@ -286,6 +286,27 @@ class CategoricalRewardTrainer(RewardTrainer):
             return log_loss
 
 
+def get_hh_rlhf_dataset(
+    data_subset: DataSubset, split: Literal["train", "test"], subset: int = 0
+) -> Dataset:
+    datasets: List[Dataset] = []
+    if data_subset == "harmless" or data_subset == "both":
+        datasets.append(
+            load_dataset("Anthropic/hh-rlhf", data_dir="harmless-base", split=split)
+        )
+    if data_subset == "helpful" or data_subset == "both":
+        datasets.append(
+            load_dataset("Anthropic/hh-rlhf", data_dir="helpful-base", split=split)
+        )
+
+    if subset:
+        datasets = [
+            dataset.select(range(subset // len(datasets))) for dataset in datasets
+        ]
+
+    return concatenate_datasets(datasets)
+
+
 trainer_classes: Dict[RewardModelType, Type[RewardTrainer]] = {
     "base": RewardTrainer,
     "mean_and_variance": MeanAndVarianceRewardTrainer,
@@ -298,37 +319,8 @@ if __name__ == "__main__":
     script_args: ScriptArguments = parser.parse_args_into_dataclasses()[0]
 
     data_subset = cast(DataSubset, script_args.data_subset)
-    train_datasets: List[Dataset] = []
-    eval_datasets: List[Dataset] = []
-
-    if data_subset == "harmless" or data_subset == "both":
-        train_datasets.append(
-            load_dataset("Anthropic/hh-rlhf", data_dir="harmless-base", split="train")
-        )
-        eval_datasets.append(
-            load_dataset("Anthropic/hh-rlhf", data_dir="harmless-base", split="test")
-        )
-    if data_subset == "helpful" or data_subset == "both":
-        train_datasets.append(
-            load_dataset("Anthropic/hh-rlhf", data_dir="helpful-base", split="train")
-        )
-        eval_datasets.append(
-            load_dataset("Anthropic/hh-rlhf", data_dir="helpful-base", split="test")
-        )
-
-    if script_args.train_subset > 0:
-        train_datasets = [
-            train_dataset.select(range(script_args.train_subset // len(train_datasets)))
-            for train_dataset in train_datasets
-        ]
-    if script_args.eval_subset > 0:
-        eval_datasets = [
-            eval_dataset.select(range(script_args.eval_subset // len(eval_datasets)))
-            for eval_dataset in eval_datasets
-        ]
-
-    train_dataset = concatenate_datasets(train_datasets)
-    eval_dataset = concatenate_datasets(eval_datasets)
+    train_dataset = get_hh_rlhf_dataset(data_subset, "train", script_args.train_subset)
+    eval_dataset = get_hh_rlhf_dataset(data_subset, "test", script_args.eval_subset)
 
     reward_model_type = cast(RewardModelType, script_args.reward_model_type)
 
