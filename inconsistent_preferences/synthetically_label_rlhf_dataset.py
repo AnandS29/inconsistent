@@ -51,14 +51,7 @@ class ScriptArguments:
             "for your model",
         },
     )
-    bf16: Optional[bool] = field(
-        default=True,
-        metadata={
-            "help": "This essentially cuts the training time in half if you want to "
-            "sacrifice a little precision and have a supported GPU."
-        },
-    )
-    max_length: int = field(default=512)
+    max_length: int = field(default=1024)
 
 
 if __name__ == "__main__":

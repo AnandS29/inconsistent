@@ -27,7 +27,7 @@ class ScriptArguments:
         default=None,
         metadata={"help": "JSONL file where results are stored."},
     )
-    per_device_eval_batch_size: Optional[int] = field(default=1)
+    batch_size: Optional[int] = field(default=1)
     model_name: Optional[str] = field(
         default="gpt2",
         metadata={
@@ -42,12 +42,8 @@ class ScriptArguments:
             "for your model",
         },
     )
-    bf16: Optional[bool] = field(
-        default=True,
-        metadata={
-            "help": "This essentially cuts the training time in half if you want to "
-            "sacrifice a little precision and have a supported GPU."
-        },
+    data_path: str = field(
+        default="Anthropic/hh-rlhf",
     )
     data_subset: str = field(
         default="both",
@@ -56,20 +52,20 @@ class ScriptArguments:
             "'helpful', or 'harmless'."
         },
     )
-    eval_subset: Optional[int] = field(
+    eval_subset: int = field(
         default=0,
         metadata={"help": "The size of the subset of the eval data to use"},
     )
-    num_labels: Optional[int] = field(
+    num_labels: int = field(
         default=1,
         metadata={"help": "The number of outputs from the model."},
     )
-    max_length: Optional[int] = field(default=512)
+    max_length: int = field(default=1024)
 
 
 if __name__ == "__main__":
     parser = HfArgumentParser(ScriptArguments)
-    script_args = parser.parse_args_into_dataclasses()[0]
+    script_args: ScriptArguments = parser.parse_args_into_dataclasses()[0]
 
     data_subset = cast(DataSubset, script_args.data_subset)
 
@@ -79,7 +75,9 @@ if __name__ == "__main__":
             script_args.reward_model_checkpoint, f"eval_results_{data_subset}.jsonl"
         )
 
-    eval_dataset = get_hh_rlhf_dataset(data_subset, "test", script_args.eval_subset)
+    eval_dataset = get_hh_rlhf_dataset(
+        data_subset, "test", script_args.eval_subset, data_path=script_args.data_path
+    )
 
     # Load the value-head model and tokenizer.
     tokenizer_name = (
@@ -146,6 +144,6 @@ if __name__ == "__main__":
             "attention_mask_rejected",
         ],
         batched=True,
-        batch_size=script_args.per_device_eval_batch_size,
+        batch_size=script_args.batch_size,
     )
     eval_results.to_json(output_fname, orient="records", lines=True)
