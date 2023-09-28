@@ -282,9 +282,8 @@ def main(  # noqa: C901
     \newcommand{\oracle}[1]{{O_{#1}}}
     \newcommand{\utility}{u}
     \newcommand{\learnedutility}{\hat{\utility}}
+    \newcommand{\exutility}{\bar{\utility}}
     \newcommand{\loss}{L}
-    \newcommand{\noise}{\epsilon}
-    \newcommand{\noisedist}{\mathcal{D}_\noise}
     \newcommand{\bordacount}{\text{BC}}
     \newcommand{\altspace}{\mathcal{A}}
     \newcommand{\alta}{a}
@@ -300,7 +299,7 @@ def main(  # noqa: C901
     matplotlib.rc("text.latex", preamble=latex_preamble)
     matplotlib.rc("font", size=9)
     matplotlib.rc("pgf", rcfonts=False, texsystem="pdflatex", preamble=latex_preamble)
-    figure = plt.figure(figsize=(6.5, 3))
+    figure = plt.figure(figsize=(5.5, 3))
     cmap = "Blues"
     color = "C0"
     title_kwargs = dict(fontsize=9)
@@ -310,12 +309,16 @@ def main(  # noqa: C901
         num_rows = 2
         num_cols = 3
 
-        true_reward_ax = figure.add_subplot(num_rows, num_cols, 1)
-        true_reward_ax.set_title("True utility function", **title_kwargs)
-        true_reward_ax.set_xlabel(r"$\alta$")
-        true_reward_ax.set_ylabel(r"$\utility(\alta)$")
-        true_reward_ax.set_xlim(0, 1)
-        true_reward_ax.plot(x.cpu(), x.cpu(), color=color)
+        base_ax = figure.add_subplot(num_rows, num_cols, 1)
+        base_ax.set_title("Preference learning", **title_kwargs)
+        base_ax.set_xlabel(r"$\alta$")
+        base_ax.set_ylabel(r"$\learnedutility(\alta)$")
+        base_ax.set_xlim(0, 1)
+        base_ax.plot(
+            x.cpu(),
+            reward_models["BaseRewardModel"](x[:, None]).detach().cpu(),
+            color=color,
+        )
 
         borda_count_ax = figure.add_subplot(num_rows, num_cols, 2)
         borda_count_ax.set_title("Borda count", **title_kwargs)
@@ -327,25 +330,19 @@ def main(  # noqa: C901
         bc[x >= 0.8] = (0.275 + 0.25 * x)[x >= 0.8]
         borda_count_ax.plot(x.cpu(), bc.cpu(), color=color)
 
-        base_ax = figure.add_subplot(num_rows, num_cols, 3)
-        base_ax.set_title("Preference learning", **title_kwargs)
-        base_ax.set_xlabel(r"$\alta$")
-        base_ax.set_ylabel(r"$\learnedutility(\alta)$")
-        base_ax.set_xlim(0, 1)
-        base_ax.plot(
-            x.cpu(),
-            reward_models["BaseRewardModel"](x[:, None]).detach().cpu(),
-            color=color,
-        )
+        true_reward_ax = figure.add_subplot(num_rows, num_cols, 3)
+        true_reward_ax.set_title("Expected utility function", **title_kwargs)
+        true_reward_ax.set_xlabel(r"$\alta$")
+        true_reward_ax.set_ylabel(r"$\exutility(\alta)$")
+        true_reward_ax.set_xlim(0, 1)
+        true_reward_ax.plot(x.cpu(), x.cpu(), color=color)
 
-        mean_and_variance_ax = figure.add_subplot(num_rows, num_cols, 4)
+        mean_and_variance_ax = figure.add_subplot(num_rows, num_cols - 1, 3)
         mean_and_variance_ax.set_title(
-            "Preference learning\n(mean and variance)", **title_kwargs
+            "Distributional preference learning\n(mean and variance)", **title_kwargs
         )
         mean_and_variance_ax.set_xlabel(r"$\alta$")
-        mean_and_variance_ax.set_ylabel(
-            r"$\learnedutility(\alta) \pm \hat{\sigma}(\alta)$"
-        )
+        mean_and_variance_ax.set_ylabel(r"$\hat{\mu}(\alta) \pm \hat{\sigma}(\alta)$")
         mean_and_variance_ax.set_xlim(0, 1)
         mean_and_log_std = (
             reward_models["MeanAndVarianceRewardModel"](x[:, None]).detach().cpu()
@@ -358,10 +355,12 @@ def main(  # noqa: C901
         )
         mean_and_variance_ax.set_ylim(mean.min() - 1, mean.max() + 1)
 
-        categorical_ax = figure.add_subplot(num_rows, num_cols, 5)
-        categorical_ax.set_title("Preference learning\n(categorical)", **title_kwargs)
+        categorical_ax = figure.add_subplot(num_rows, num_cols - 1, 4)
+        categorical_ax.set_title(
+            "Distributional preference learning\n(categorical)", **title_kwargs
+        )
         categorical_ax.set_xlabel(r"$\alta$")
-        categorical_ax.set_ylabel(r"$\learnedutility(\alta)$")
+        categorical_ax.set_ylabel(r"$\hat{p}(\utility \mid \alta)$")
         categorical_ax.set_xlim(0, 1)
         dist = reward_models["CategoricalRewardModel"](x[:, None]).detach().cpu()
         categorical_ax.imshow(
@@ -372,34 +371,35 @@ def main(  # noqa: C901
             cmap=cmap,
         )
 
-        classifier_ax = figure.add_subplot(num_rows, num_cols, 6)
-        classifier_ax.set_title(
-            "Preference learning (classifier)\nTODO", **title_kwargs
-        )
-        classifier_ax.set_xlabel(r"$\alta$")
-        classifier_ax.set_ylabel(r"$\altb$")
-        classifier_ax.set_xlim(0, 1)
-        classifier_ax.set_ylim(0, 1)
-        classifier_ax.set_aspect("equal")
-        x, y = torch.meshgrid(torch.linspace(0, 1, 10), torch.linspace(0, 1, 10))
-        logits = (
-            reward_models["ClassifierRewardModel"](
-                x.flatten().to(device)[:, None], y.flatten().to(device)[:, None]
-            )
-            .detach()
-            .cpu()
-            .squeeze(-1)
-            .reshape(x.size())
-        )
-        classifier_ax.imshow(
-            F.sigmoid(logits).transpose(0, 1),
-            origin="lower",
-            extent=(0, 1, 0, 1),
-            aspect="auto",
-            cmap=cmap,
-        )
+        # classifier_ax = figure.add_subplot(num_rows, num_cols, 6)
+        # classifier_ax.set_title(
+        #     "Preference learning (classifier)\nTODO", **title_kwargs
+        # )
+        # classifier_ax.set_xlabel(r"$\alta$")
+        # classifier_ax.set_ylabel(r"$\altb$")
+        # classifier_ax.set_xlim(0, 1)
+        # classifier_ax.set_ylim(0, 1)
+        # classifier_ax.set_aspect("equal")
+        # x, y = torch.meshgrid(torch.linspace(0, 1, 10), torch.linspace(0, 1, 10))
+        # logits = (
+        #     reward_models["ClassifierRewardModel"](
+        #         x.flatten().to(device)[:, None], y.flatten().to(device)[:, None]
+        #     )
+        #     .detach()
+        #     .cpu()
+        #     .squeeze(-1)
+        #     .reshape(x.size())
+        # )
+        # classifier_ax.imshow(
+        #     F.sigmoid(logits).transpose(0, 1),
+        #     origin="lower",
+        #     extent=(0, 1, 0, 1),
+        #     aspect="auto",
+        #     cmap=cmap,
+        # )
 
         figure.tight_layout(pad=0.1)
+        figure.subplots_adjust(hspace=1, wspace=0.6)
     elif env_name == "2d":
         x = torch.linspace(0, 1, 20, device=device)
         y = torch.linspace(0, 1, 20, device=device)
