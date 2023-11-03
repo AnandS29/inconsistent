@@ -37,14 +37,9 @@ jobs:
           pip install -r requirements.txt
           pip install --upgrade -r requirements_dev.txt
       
-      - uses: teatimeguest/setup-texlive-action@v3
-        with:
-          packages: >-
-            times
-            amsmath
-            mathptmx
-            xcolor
-            pgfplots
+      - name: Install LaTeX
+        run: |
+          sudo apt-get install texlive-latex-recommended
 
       - name: Run flake8
         run: flake8 inconsistent_preferences tests
