@@ -1,6 +1,6 @@
 import argparse
 import os
-from typing import Any, Callable, Dict, List, Literal, Optional, Type, cast
+from typing import Any, Callable, Dict, List, Literal, Optional, Type
 
 import matplotlib
 import matplotlib.pyplot as plt
@@ -57,7 +57,7 @@ class BaseRewardModel(nn.Module):
         reward1 = self.forward(state1)
         reward_diff = reward0 - reward1
         reward_diff[preferences == 1] *= -1
-        return cast(torch.Tensor, -F.softplus(-reward_diff))
+        return -F.softplus(-reward_diff)
 
 
 class MeanAndVarianceRewardModel(BaseRewardModel):
@@ -89,7 +89,7 @@ class MeanAndVarianceRewardModel(BaseRewardModel):
         # p: torch.Tensor = Normal(0, torch.sqrt(var_combined)).cdf(diff_mean)
         z = diff_mean / torch.sqrt(var_combined)
         # Based on approximation here: https://stats.stackexchange.com/a/452121
-        return cast(torch.Tensor, -F.softplus(-z * np.sqrt(2 * np.pi)))
+        return -F.softplus(-z * np.sqrt(2 * np.pi))
         # logp = torch.log(p.clamp(min=1e-4))
         # return logp
 
@@ -151,7 +151,7 @@ class ClassifierRewardModel(BaseRewardModel):
 
         logits = self.forward(state0, state1)
         logits[preferences == 0] *= -1
-        return cast(torch.Tensor, -F.softplus(-logits))
+        return -F.softplus(-logits)
 
 
 def train_rlhf(
