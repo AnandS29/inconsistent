@@ -17,7 +17,7 @@ def test_train_llm_preference_model(tmp_path):
             [
                 "python",
                 "-m",
-                "inconsistent_preferences.train_llm_preference_model",
+                "hidden_context.train_llm_preference_model",
                 "--model_name=gpt2",
                 f"--reward_model_type={reward_model_type}",
                 "--max_length=1024",
@@ -44,7 +44,7 @@ def test_evaluate_assistant_responses(tmp_path):
             [
                 "python",
                 "-m",
-                "inconsistent_preferences.evaluate_assistant_responses",
+                "hidden_context.evaluate_assistant_responses",
                 "--input=data/jailbroken_responses.jsonl",
                 "--model_name=gpt2",
                 f"--reward_model_checkpoints={checkpoint_dir}",
@@ -77,7 +77,7 @@ def test_evaluate_llm_preference_model(tmp_path):
             [
                 "python",
                 "-m",
-                "inconsistent_preferences.evaluate_llm_preference_model",
+                "hidden_context.evaluate_llm_preference_model",
                 "--data_subset=both",
                 "--eval_dataset_size=8",
                 "--model_name=gpt2",

@@ -42,21 +42,21 @@ jobs:
           sudo apt-get install texlive-latex-recommended texlive-latex-extra dvipng cm-super
 
       - name: Run flake8
-        run: flake8 inconsistent_preferences tests
+        run: flake8 hidden_context tests
         if: ${{ always() }}
 
       - name: Run black
-        run: black --check inconsistent_preferences tests
+        run: black --check hidden_context tests
         if: ${{ always() }}
 
       - name: Run isort
-        run: isort --check --diff inconsistent_preferences tests
+        run: isort --check --diff hidden_context tests
         if: ${{ always() }}
 
       - name: Check types
         if: ${{ always() }}
         run: |
-          mypy inconsistent_preferences tests
+          mypy hidden_context tests
       
       - name: Run tests
         if: ${{ always() }}

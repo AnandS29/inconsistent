@@ -6,7 +6,7 @@ def test_toy_experiments(tmp_path):
         [
             "python",
             "-m",
-            "inconsistent_preferences.toy_experiments",
+            "hidden_context.toy_experiments",
             "--env=1d",
             "--batch_size=8",
             "--lr=1e-4",
