@@ -37,9 +37,9 @@ jobs:
           pip install -r requirements.txt
           pip install --upgrade -r requirements_dev.txt
       
-      - name: Install LaTeX
+      - name: Install APT requirements
         run: |
-          sudo apt-get install texlive-latex-recommended
+          sudo apt-get install texlive-latex-recommended texlive-latex-extra dvipng cm-super
 
       - name: Run flake8
         run: flake8 inconsistent_preferences tests
