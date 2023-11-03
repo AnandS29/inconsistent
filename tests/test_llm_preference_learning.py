@@ -96,3 +96,13 @@ def test_evaluate_llm_preference_model(tmp_path):
         )
         assert reward_outputs_chosen.shape == (8, num_labels)
         assert reward_outputs_rejected.shape == (8, num_labels)
+
+
+def test_summarize_results():
+    subprocess.check_call(
+        [
+            "python",
+            "-m",
+            "hidden_context.summarize_results",
+        ],
+    )
