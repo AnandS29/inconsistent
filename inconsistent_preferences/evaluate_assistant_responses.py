@@ -45,6 +45,10 @@ class ScriptArguments:
     )
     num_labels: int = field(default=1)
     max_length: int = field(default=1024)
+    bf16: bool = field(
+        default=True,
+        metadata={"help": "Whether to use bfloat16 for the reward model."},
+    )
 
 
 if __name__ == "__main__":
@@ -71,10 +75,13 @@ if __name__ == "__main__":
     dataset = load_dataset("json", data_files=[script_args.input])["train"]
 
     print("Loading base reward model...")
+    model_kwargs = {}
+    if script_args.bf16:
+        model_kwargs["torch_dtype"] = torch.bfloat16
     base_reward_model = AutoModelForSequenceClassification.from_pretrained(
         script_args.model_name,
         num_labels=script_args.num_labels,
-        torch_dtype=torch.bfloat16,
+        **model_kwargs,
     )
 
     for model_name, checkpoint_path in zip(
@@ -94,7 +101,11 @@ if __name__ == "__main__":
             responses = example["responses"]
             reward_outputs = []
             for response in responses:
-                inputs = tokenizer(prompt + response, return_tensors="pt")
+                inputs = tokenizer(
+                    prompt + response,
+                    return_tensors="pt",
+                    max_length=script_args.max_length,
+                )
                 reward_output = reward_model(
                     inputs.input_ids.cuda(), inputs.attention_mask.cuda()
                 )[0]

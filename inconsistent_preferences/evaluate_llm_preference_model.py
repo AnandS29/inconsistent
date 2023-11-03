@@ -61,6 +61,10 @@ class ScriptArguments:
         metadata={"help": "The number of outputs from the model."},
     )
     max_length: int = field(default=1024)
+    bf16: bool = field(
+        default=True,
+        metadata={"help": "Whether to use bfloat16 precision."},
+    )
 
 
 if __name__ == "__main__":
@@ -88,10 +92,13 @@ if __name__ == "__main__":
     tokenizer = AutoTokenizer.from_pretrained(tokenizer_name, use_auth_token=True)
 
     peft_config = LoraConfig.from_pretrained(script_args.reward_model_checkpoint)
+    model_kwargs = {}
+    if script_args.bf16:
+        model_kwargs["torch_dtype"] = torch.bfloat16
     model = AutoModelForSequenceClassification.from_pretrained(
         script_args.model_name,
         num_labels=script_args.num_labels,
-        torch_dtype=torch.bfloat16,
+        **model_kwargs,
     )
     model = PeftModel.from_pretrained(
         model, script_args.reward_model_checkpoint, is_trainable=False
