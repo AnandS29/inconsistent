@@ -5,7 +5,7 @@ import numpy as np
 import pandas as pd
 
 
-def test_train_llm_preference_model():
+def test_train_llm_preference_model(tmp_path):
     for reward_model_type in ["base", "mean_and_variance", "categorical"]:
         if reward_model_type == "categorical":
             extra_args = ["--entropy_coeff=0.1"]
@@ -19,9 +19,10 @@ def test_train_llm_preference_model():
                 "--model_name=gpt2",
                 f"--reward_model_type={reward_model_type}",
                 "--max_length=1024",
-                "--train_subset=8",
-                "--eval_subset=8",
+                "--train_dataset_size=8",
+                "--eval_dataset_size=8",
                 "--bf16=false",
+                f"--log_dir={tmp_path}",
                 *extra_args,
             ],
         )
@@ -74,7 +75,7 @@ def test_evaluate_llm_preference_model(tmp_path):
                 "-m",
                 "inconsistent_preferences.evaluate_llm_preference_model",
                 "--data_subset=both",
-                "--eval_subset=8",
+                "--eval_dataset_size=8",
                 "--model_name=gpt2",
                 f"--reward_model_checkpoint={checkpoint_dir}",
                 f"--num_labels={num_labels}",

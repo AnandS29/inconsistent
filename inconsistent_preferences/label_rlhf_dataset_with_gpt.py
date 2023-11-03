@@ -83,7 +83,7 @@ if __name__ == "__main__":
     dataset = get_hh_rlhf_dataset(
         "both",
         split=cast(Literal["train", "test"], script_args.split),
-        subset=script_args.subset,
+        dataset_size=script_args.subset,
     )
 
     def split_into_responses(inputs):

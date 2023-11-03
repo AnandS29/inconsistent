@@ -81,7 +81,7 @@ if __name__ == "__main__":
     num_proc = 24  # Can adjust to be higher if you have more processors.
     dataset = get_hh_rlhf_dataset(
         cast(DataSubset, script_args.data_subset),
-        subset=script_args.subset,
+        dataset_size=script_args.subset,
         split=cast(Literal["train", "test"], script_args.split),
     )
 

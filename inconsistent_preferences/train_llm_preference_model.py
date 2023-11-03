@@ -3,8 +3,6 @@ from functools import partial
 from typing import Any, Dict, List, Optional, Type, Union, cast
 
 import numpy as np
-
-# import evaluate
 import torch
 import torch.nn.functional as F  # noqa: N812
 from datasets import Dataset, concatenate_datasets, load_dataset
@@ -27,14 +25,8 @@ RewardModelType: TypeAlias = Literal["base", "mean_and_variance", "categorical"]
 DataSubset: TypeAlias = Literal["both", "helpful", "harmless"]
 
 
-# Define and parse arguments.
 @dataclass
 class ScriptArguments:
-    """
-    These arguments vary depending on how many GPUs you have, what their capacity and
-    features are, and what size model you want to train.
-    """
-
     local_rank: int = field(default=-1, metadata={"help": "Used for multi-gpu"})
     resume_from_checkpoint: bool = field(
         default=False,
@@ -110,11 +102,11 @@ class ScriptArguments:
         default=1,
         metadata={"help": "The number of training epochs for the reward model."},
     )
-    train_subset: int = field(
+    train_dataset_size: int = field(
         default=0,
         metadata={"help": "The size of the subset of the training data to use"},
     )
-    eval_subset: int = field(
+    eval_dataset_size: int = field(
         default=0,
         metadata={"help": "The size of the subset of the eval data to use"},
     )
@@ -135,6 +127,7 @@ class ScriptArguments:
         default=False,
         metadata={"help": "Whether to run eval after the first step"},
     )
+    log_dir: str = field(default="data/logs")
 
 
 class HHRLHFPreprocessor(object):
@@ -318,7 +311,7 @@ class CategoricalRewardTrainer(RewardTrainer):
 def get_hh_rlhf_dataset(
     data_subset: DataSubset,
     split: Literal["train", "test"],
-    subset: int = 0,
+    dataset_size: int = 0,
     data_path="Anthropic/hh-rlhf",
 ) -> Dataset:
     datasets: List[Dataset] = []
@@ -342,9 +335,9 @@ def get_hh_rlhf_dataset(
             )
         )
 
-    if subset:
+    if dataset_size:
         datasets = [
-            dataset.select(range(subset // len(datasets))) for dataset in datasets
+            dataset.select(range(dataset_size // len(datasets))) for dataset in datasets
         ]
 
     return concatenate_datasets(datasets)
@@ -363,10 +356,16 @@ if __name__ == "__main__":
 
     data_subset = cast(DataSubset, script_args.data_subset)
     train_dataset = get_hh_rlhf_dataset(
-        data_subset, "train", script_args.train_subset, data_path=script_args.data_path
+        data_subset,
+        "train",
+        script_args.train_dataset_size,
+        data_path=script_args.data_path,
     )
     eval_dataset = get_hh_rlhf_dataset(
-        data_subset, "test", script_args.eval_subset, data_path=script_args.data_path
+        data_subset,
+        "test",
+        script_args.eval_dataset_size,
+        data_path=script_args.data_path,
     )
 
     reward_model_type = cast(RewardModelType, script_args.reward_model_type)
@@ -375,12 +374,10 @@ if __name__ == "__main__":
     # are using deepspeed.
     model_name_split = script_args.model_name.split("/")[-1]
     output_name = (
-        f"data/logs/{data_subset}/"
-        f"{reward_model_type}_{model_name_split}_peft_hh-rlhf_rmts"
-        f"_sli"  # small linear init
-        f"__{script_args.train_subset}_{script_args.learning_rate}"
+        f"{script_args.log_dir}/hh-rlhf/{data_subset}/"
+        f"{reward_model_type}_{model_name_split}"
+        f"__{script_args.train_dataset_size}_{script_args.learning_rate}"
         f"_{script_args.lr_scheduler_type}_{script_args.num_train_epochs}"
-        # f"_ptohp"  # Pre-training optimizer hyper parameters
     )
     if reward_model_type == "categorical":
         output_name += f"_{script_args.num_atoms}_{script_args.entropy_coeff}"
@@ -418,9 +415,6 @@ if __name__ == "__main__":
         logging_strategy="steps",
         logging_steps=10,
         optim=script_args.optim,
-        # adam_beta1=0.9,
-        # adam_beta2=0.95,
-        # adam_epsilon=1e-5,
         lr_scheduler_type=lr_scheduler_type,
     )
     # Load the value-head model and tokenizer.
@@ -454,6 +448,8 @@ if __name__ == "__main__":
     model = AutoModelForSequenceClassification.from_pretrained(
         script_args.model_name, num_labels=num_labels, torch_dtype=torch.bfloat16
     )
+    # We multiply the final linear layer's weights by 0.01 because this seems to
+    # significantly stabilize training and lead to better optimization of the loss.
     model.score.weight.data *= 0.01
     model = get_peft_model(model, peft_config)
     model.print_trainable_parameters()
@@ -468,7 +464,6 @@ if __name__ == "__main__":
     num_proc = 24  # Can adjust to be higher if you have more processors.
     original_columns = train_dataset.column_names
 
-    # preprocess the dataset and filter out QAs that are longer than script_args.max_length
     train_dataset = train_dataset.map(
         HHRLHFPreprocessor(tokenizer),
         batched=True,
@@ -535,7 +530,7 @@ if __name__ == "__main__":
                 "return_loss": True,
             }
 
-    # Train the model, woohoo.
+    # Train the model.
     trainer = trainer_class(
         model=model,
         args=training_args,

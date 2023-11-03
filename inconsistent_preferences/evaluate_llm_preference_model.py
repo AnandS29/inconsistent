@@ -2,7 +2,6 @@ import os
 from dataclasses import dataclass, field
 from typing import Optional, cast
 
-# import evaluate
 import torch
 from peft import LoraConfig, PeftModel
 from transformers import (
@@ -25,16 +24,10 @@ class ScriptArguments:
     )
     output: Optional[str] = field(
         default=None,
-        metadata={"help": "JSONL file where results are stored."},
+        metadata={"help": "JSONL file where results will be stored."},
     )
     batch_size: Optional[int] = field(default=1)
-    model_name: Optional[str] = field(
-        default="gpt2",
-        metadata={
-            "help": "The model that you want to train from the Hugging Face hub. "
-            "E.g. gpt2, gpt2-xl, bert, etc."
-        },
-    )
+    model_name: Optional[str] = field(default="gpt2")
     tokenizer_name: Optional[str] = field(
         default=None,
         metadata={
@@ -52,7 +45,7 @@ class ScriptArguments:
             "'helpful', or 'harmless'."
         },
     )
-    eval_subset: int = field(
+    eval_dataset_size: int = field(
         default=0,
         metadata={"help": "The size of the subset of the eval data to use"},
     )
@@ -80,7 +73,10 @@ if __name__ == "__main__":
         )
 
     eval_dataset = get_hh_rlhf_dataset(
-        data_subset, "test", script_args.eval_subset, data_path=script_args.data_path
+        data_subset,
+        "test",
+        script_args.eval_dataset_size,
+        data_path=script_args.data_path,
     )
 
     # Load the value-head model and tokenizer.
