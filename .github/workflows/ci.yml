@@ -53,4 +53,4 @@ jobs:
         if: ${{ always() }}
         timeout-minutes: 10
         run: |
-          pytest --log-cli-level=INFO
+          pytest -m "not uses_huggingface" --log-cli-level=INFO

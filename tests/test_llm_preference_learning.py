@@ -3,8 +3,10 @@ import subprocess
 
 import numpy as np
 import pandas as pd
+import pytest
 
 
+@pytest.mark.uses_huggingface
 def test_train_llm_preference_model(tmp_path):
     for reward_model_type in ["base", "mean_and_variance", "categorical"]:
         if reward_model_type == "categorical":
@@ -28,6 +30,7 @@ def test_train_llm_preference_model(tmp_path):
         )
 
 
+@pytest.mark.uses_huggingface
 def test_evaluate_assistant_responses(tmp_path):
     for reward_model_type, num_labels in [
         ("base", 1),
@@ -60,6 +63,7 @@ def test_evaluate_assistant_responses(tmp_path):
         assert reward_outputs.shape == (187, 2, num_labels)
 
 
+@pytest.mark.uses_huggingface
 def test_evaluate_llm_preference_model(tmp_path):
     for reward_model_type, num_labels in [
         ("base", 1),
