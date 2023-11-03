@@ -281,17 +281,24 @@ def main(  # noqa: C901
 
     \newcommand{\oracle}[1]{{O_{#1}}}
     \newcommand{\utility}{u}
-    \newcommand{\learnedutility}{\hat{\utility}}
     \newcommand{\exutility}{\bar{\utility}}
+    \newcommand{\learnedutility}{\hat{\utility}}
     \newcommand{\loss}{L}
+    \newcommand{\noise}{\epsilon}
+    \newcommand{\noisedist}{\mathcal{D}_\noise}
     \newcommand{\bordacount}{\text{BC}}
     \newcommand{\altspace}{\mathcal{A}}
     \newcommand{\alta}{a}
     \newcommand{\altb}{b}
     \newcommand{\altc}{c}
-    \newcommand{\latent}{z}
+    \newcommand{\unseenspace}{\mathcal{Z}}
+    \newcommand{\unseen}{z}
+    \newcommand{\unseendist}{\mathcal{D}_\unseen}
+    \newcommand{\comparisonprob}{p}
+    \newcommand{\btlprob}{\comparisonprob^\text{BTL}}
     \newcommand{\uniformdist}{\text{Unif}}
     \newcommand{\bernoulli}{\mathcal{B}}
+    \newcommand{\learneddist}{\smash{\hat{\mathcal{D}}}}
     """
     matplotlib.rc("text", usetex=True)
     matplotlib.rcParams["font.family"] = "serif"
@@ -299,48 +306,96 @@ def main(  # noqa: C901
     matplotlib.rc("text.latex", preamble=latex_preamble)
     matplotlib.rc("font", size=9)
     matplotlib.rc("pgf", rcfonts=False, texsystem="pdflatex", preamble=latex_preamble)
-    figure = plt.figure(figsize=(5.5, 3))
-    cmap = "Blues"
-    color = "C0"
+    figure = plt.figure(figsize=(5.5, 1.2))
+    cmap = "Greys"
+    color = "k"
     title_kwargs = dict(fontsize=9)
 
     if env_name == "1d":
         x = torch.linspace(0, 1, 100, device=device)
-        num_rows = 2
+        num_rows = 1
         num_cols = 3
 
-        base_ax = figure.add_subplot(num_rows, num_cols, 1)
-        base_ax.set_title("Preference learning", **title_kwargs)
-        base_ax.set_xlabel(r"$\alta$")
-        base_ax.set_ylabel(r"$\learnedutility(\alta)$")
-        base_ax.set_xlim(0, 1)
-        base_ax.plot(
+        # Combine first three subplots into one
+        combined_ax = figure.add_subplot(num_rows, num_cols, 1)
+        combined_ax.set_title("Normal preference learning", **title_kwargs)
+        combined_ax.set_xlabel(r"$\alta$")
+        combined_ax.set_xlim(0, 1)
+
+        # Base Reward Model Output
+        rewards = reward_models["BaseRewardModel"](x[:, None]).detach().cpu().tolist()
+        combined_ax.plot(
             x.cpu(),
-            reward_models["BaseRewardModel"](x[:, None]).detach().cpu(),
-            color=color,
+            rewards,
+            color="k",
+            label=r"$\learnedutility(\alta)$",
+        )
+        combined_ax.set_ylim(
+            [
+                -0.2 * max(rewards) + 1.2 * min(rewards),
+                1.2 * max(rewards) - 0.2 * min(rewards),
+            ]
+        )
+        combined_ax.annotate(
+            r"$\learnedutility(\alta)$",
+            xy=(x[65].item(), rewards[65]),
+            textcoords="offset points",
+            xytext=(-3, 3),
+            color="k",
+            ha="right",
         )
 
-        borda_count_ax = figure.add_subplot(num_rows, num_cols, 2)
-        borda_count_ax.set_title("Borda count", **title_kwargs)
-        borda_count_ax.set_xlabel(r"$\alta$")
-        borda_count_ax.set_ylabel(r"$\bordacount(\alta)$")
-        borda_count_ax.set_xlim(0, 1)
+        # combined_ax.set_ylabel(r"$\text{Learned Utility}(\alpha)$", color=color)
+        # combined_ax.tick_params(axis='y', labelcolor=color)
+
+        # Creating twin X-axis for Borda Count and Expected Utility
+        twin_ax = combined_ax.twinx()
+
+        # Borda Count
         bc = torch.empty_like(x)
         bc[x < 0.8] = (0.1 + x)[x < 0.8]
         bc[x >= 0.8] = (0.275 + 0.25 * x)[x >= 0.8]
-        borda_count_ax.plot(x.cpu(), bc.cpu(), color=color)
-
-        true_reward_ax = figure.add_subplot(num_rows, num_cols, 3)
-        true_reward_ax.set_title("Expected utility function", **title_kwargs)
-        true_reward_ax.set_xlabel(r"$\alta$")
-        true_reward_ax.set_ylabel(r"$\exutility(\alta)$")
-        true_reward_ax.set_xlim(0, 1)
-        true_reward_ax.plot(x.cpu(), x.cpu(), color=color)
-
-        mean_and_variance_ax = figure.add_subplot(num_rows, num_cols - 1, 3)
-        mean_and_variance_ax.set_title(
-            "Distributional preference learning\n(mean and variance)", **title_kwargs
+        twin_ax.plot(x.cpu(), bc.cpu(), color="tab:blue", label=r"$\bordacount(\alta)$")
+        twin_ax.annotate(
+            r"$\bordacount(\alta)$",
+            xy=(x[35].item(), bc[35].item()),
+            textcoords="offset points",
+            xytext=(-3, 3),
+            color="tab:blue",
+            ha="right",
         )
+
+        # Expected Utility Function
+        twin_ax.plot(x.cpu(), x.cpu(), color="tab:red", label=r"$\exutility(\alta)$")
+        twin_ax.set_yticks([])
+        twin_ax.annotate(
+            r"$\exutility(\alta)$",
+            xy=(x[50].item(), x[50].item()),
+            textcoords="offset points",
+            xytext=(3, -5),
+            color="tab:red",
+            ha="left",
+        )
+        combined_ax.set_yticks([])
+
+        # twin_ax.set_ylabel(r"$\text{Utility Measures}$", color='C1')
+        # twin_ax.tick_params(axis='y', labelcolor='C1')
+
+        # Adding legend
+        # lines, labels = combined_ax.get_legend_handles_labels()
+        # lines2, labels2 = twin_ax.get_legend_handles_labels()
+        # twin_ax.legend(
+        #     lines + lines2,
+        #     labels + labels2,
+        #     loc="upper left",
+        #     handlelength=1,
+        #     frameon=False,
+        #     borderaxespad=0.1,
+        # )
+
+        # Mean and Variance Subplot
+        mean_and_variance_ax = figure.add_subplot(num_rows, num_cols, 2)
+        mean_and_variance_ax.set_title("DPL (mean and variance)", **title_kwargs)
         mean_and_variance_ax.set_xlabel(r"$\alta$")
         mean_and_variance_ax.set_ylabel(r"$\hat{\mu}(\alta) \pm \hat{\sigma}(\alta)$")
         mean_and_variance_ax.set_xlim(0, 1)
@@ -350,15 +405,20 @@ def main(  # noqa: C901
         mean = mean_and_log_std[:, 0]
         std = torch.exp(mean_and_log_std[:, 1])
         mean_and_variance_ax.plot(x.cpu(), mean, color=color)
+        ymin = mean.min() - 1
+        ymax = mean.max() + 1
         mean_and_variance_ax.fill_between(
-            x.cpu(), mean - std, mean + std, alpha=0.2, color=color
+            x.cpu(),
+            np.clip(mean - std, ymin, ymax),
+            np.clip(mean + std, ymin, ymax),
+            alpha=0.2,
+            color=color,
         )
         mean_and_variance_ax.set_ylim(mean.min() - 1, mean.max() + 1)
 
-        categorical_ax = figure.add_subplot(num_rows, num_cols - 1, 4)
-        categorical_ax.set_title(
-            "Distributional preference learning\n(categorical)", **title_kwargs
-        )
+        # Categorical Subplot
+        categorical_ax = figure.add_subplot(num_rows, num_cols, 3)
+        categorical_ax.set_title("DPL (categorical)", **title_kwargs)
         categorical_ax.set_xlabel(r"$\alta$")
         categorical_ax.set_ylabel(r"$\hat{p}(\utility \mid \alta)$")
         categorical_ax.set_xlim(0, 1)
@@ -371,35 +431,8 @@ def main(  # noqa: C901
             cmap=cmap,
         )
 
-        # classifier_ax = figure.add_subplot(num_rows, num_cols, 6)
-        # classifier_ax.set_title(
-        #     "Preference learning (classifier)\nTODO", **title_kwargs
-        # )
-        # classifier_ax.set_xlabel(r"$\alta$")
-        # classifier_ax.set_ylabel(r"$\altb$")
-        # classifier_ax.set_xlim(0, 1)
-        # classifier_ax.set_ylim(0, 1)
-        # classifier_ax.set_aspect("equal")
-        # x, y = torch.meshgrid(torch.linspace(0, 1, 10), torch.linspace(0, 1, 10))
-        # logits = (
-        #     reward_models["ClassifierRewardModel"](
-        #         x.flatten().to(device)[:, None], y.flatten().to(device)[:, None]
-        #     )
-        #     .detach()
-        #     .cpu()
-        #     .squeeze(-1)
-        #     .reshape(x.size())
-        # )
-        # classifier_ax.imshow(
-        #     F.sigmoid(logits).transpose(0, 1),
-        #     origin="lower",
-        #     extent=(0, 1, 0, 1),
-        #     aspect="auto",
-        #     cmap=cmap,
-        # )
-
         figure.tight_layout(pad=0.1)
-        figure.subplots_adjust(hspace=1, wspace=0.6)
+        figure.subplots_adjust(wspace=0.7, left=0.05, right=0.95)
     elif env_name == "2d":
         x = torch.linspace(0, 1, 20, device=device)
         y = torch.linspace(0, 1, 20, device=device)

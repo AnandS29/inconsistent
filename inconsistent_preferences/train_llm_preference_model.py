@@ -86,6 +86,12 @@ class ScriptArguments:
         default=0.0,
         metadata={"help": "The entropy coefficient for the categorical reward model."},
     )
+    variance_penalty: float = field(
+        default=0.0,
+        metadata={
+            "help": "The variance penalty for the mean and variance reward model."
+        },
+    )
     tokenizer_name: Optional[str] = field(
         default=None,
         metadata={
@@ -168,10 +174,14 @@ def get_step_decay_lr_lambda(current_step: int, *, num_training_steps: int):
         return 0.01
 
 
+def get_cosine_decay_lr_lambda(current_step: int, *, num_training_steps: int):
+    return 0.1 + 0.9 * 0.5 * (1 + np.cos(np.pi * current_step / num_training_steps))
+
+
 class RewardTrainer(Trainer):
-    def __init__(self, *args, use_step_lr_scheduler=False, **kwargs):
+    def __init__(self, *args, lr_lambda=None, **kwargs):
         super().__init__(*args, **kwargs)
-        self.use_step_lr_scheduler = use_step_lr_scheduler
+        self.lr_lambda = lr_lambda
 
     @classmethod
     def per_sample_loss(cls, rewards_chosen, rewards_rejected):
@@ -209,9 +219,9 @@ class RewardTrainer(Trainer):
         return loss
 
     def create_scheduler(self, num_training_steps: int, optimizer=None):
-        if self.use_step_lr_scheduler:
+        if self.lr_lambda is not None:
             lr_lambda = partial(
-                get_step_decay_lr_lambda,
+                self.lr_lambda,
                 num_training_steps=num_training_steps,
             )
             self.lr_scheduler = LambdaLR(optimizer, lr_lambda)
@@ -235,17 +245,33 @@ class RewardTrainer(Trainer):
 
 
 class MeanAndVarianceRewardTrainer(RewardTrainer):
+    def __init__(self, *args, variance_penalty: float = 0.0, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.variance_penalty = variance_penalty
+
     @classmethod
     def per_sample_loss(cls, rewards_chosen, rewards_rejected):
         mean_chosen = rewards_chosen[:, 0]
-        log_std_chosen = rewards_chosen[:, 1]
+        std_chosen = F.softplus(rewards_chosen[:, 1])
         mean_rejected = rewards_rejected[:, 0]
-        log_std_rejected = rewards_rejected[:, 1]
+        std_rejected = F.softplus(rewards_rejected[:, 1])
 
         diff_mean = mean_chosen - mean_rejected
-        var_combined = torch.exp(log_std_chosen) ** 2 + torch.exp(log_std_rejected) ** 2
+        var_combined = std_chosen**2 + std_rejected**2
         z = diff_mean / torch.sqrt(var_combined)
         return F.softplus(-z * np.sqrt(2 * np.pi))
+
+    def loss(self, rewards_chosen, rewards_rejected):
+        std_chosen = F.softplus(rewards_chosen[:, 1])
+        std_rejected = F.softplus(rewards_rejected[:, 1])
+        variance_loss = (std_chosen**2 + std_rejected**2).mean()
+
+        log_loss = self.per_sample_loss(rewards_chosen, rewards_rejected).mean()
+
+        if self.model.training:
+            return log_loss + self.variance_penalty * variance_loss
+        else:
+            return log_loss
 
 
 class CategoricalRewardTrainer(RewardTrainer):
@@ -299,14 +325,22 @@ def get_hh_rlhf_dataset(
     if data_path == "Anthropic/hh-rlhf":
         if data_subset == "harmless" or data_subset == "both":
             datasets.append(
-                load_dataset("Anthropic/hh-rlhf", data_dir="harmless-base", split=split)
+                load_dataset(
+                    "Anthropic/hh-rlhf", data_dir="harmless-base", split=split
+                ).map(lambda data: {"data_subset": "harmless"})
             )
         if data_subset == "helpful" or data_subset == "both":
             datasets.append(
-                load_dataset("Anthropic/hh-rlhf", data_dir="helpful-base", split=split)
+                load_dataset(
+                    "Anthropic/hh-rlhf", data_dir="helpful-base", split=split
+                ).map(lambda data: {"data_subset": "helpful"})
             )
     else:
-        datasets.append(load_dataset(data_path, split=split))
+        datasets.append(
+            load_dataset(data_path, split=split).map(
+                lambda data: {"data_subset": data_subset}
+            )
+        )
 
     if subset:
         datasets = [
@@ -343,16 +377,23 @@ if __name__ == "__main__":
     output_name = (
         f"data/logs/{data_subset}/"
         f"{reward_model_type}_{model_name_split}_peft_hh-rlhf_rmts"
+        f"_sli"  # small linear init
         f"__{script_args.train_subset}_{script_args.learning_rate}"
         f"_{script_args.lr_scheduler_type}_{script_args.num_train_epochs}"
+        # f"_ptohp"  # Pre-training optimizer hyper parameters
     )
     if reward_model_type == "categorical":
         output_name += f"_{script_args.num_atoms}_{script_args.entropy_coeff}"
+    elif reward_model_type == "mean_and_variance":
+        output_name += f"_{script_args.variance_penalty}"
 
     trainer_kwargs: Dict[str, Any] = {}
     if script_args.lr_scheduler_type == "step":
         lr_scheduler_type = "constant"
-        trainer_kwargs["use_step_lr_scheduler"] = True
+        trainer_kwargs["lr_lambda"] = get_step_decay_lr_lambda
+    elif script_args.lr_scheduler_type == "cosine":
+        lr_scheduler_type = "constant"
+        trainer_kwargs["lr_lambda"] = get_cosine_decay_lr_lambda
     else:
         lr_scheduler_type = script_args.lr_scheduler_type
 
@@ -377,6 +418,9 @@ if __name__ == "__main__":
         logging_strategy="steps",
         logging_steps=10,
         optim=script_args.optim,
+        # adam_beta1=0.9,
+        # adam_beta2=0.95,
+        # adam_epsilon=1e-5,
         lr_scheduler_type=lr_scheduler_type,
     )
     # Load the value-head model and tokenizer.
@@ -402,6 +446,7 @@ if __name__ == "__main__":
         num_labels = 1
     elif reward_model_type == "mean_and_variance":
         num_labels = 2
+        trainer_kwargs["variance_penalty"] = script_args.variance_penalty
     elif reward_model_type == "categorical":
         num_labels = script_args.num_atoms
         trainer_kwargs["entropy_coeff"] = script_args.entropy_coeff
@@ -409,6 +454,7 @@ if __name__ == "__main__":
     model = AutoModelForSequenceClassification.from_pretrained(
         script_args.model_name, num_labels=num_labels, torch_dtype=torch.bfloat16
     )
+    model.score.weight.data *= 0.01
     model = get_peft_model(model, peft_config)
     model.print_trainable_parameters()
 

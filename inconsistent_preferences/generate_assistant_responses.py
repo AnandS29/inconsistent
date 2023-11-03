@@ -5,27 +5,13 @@ import multiprocess
 
 # import evaluate
 import torch
-from peft import LoraConfig, PeftModel
-from transformers import (
-    AutoModelForCausalLM,
-    AutoModelForSequenceClassification,
-    AutoTokenizer,
-    HfArgumentParser,
-)
+from transformers import AutoModelForCausalLM, AutoTokenizer, HfArgumentParser
 
 from .train_llm_preference_model import DataSubset, get_hh_rlhf_dataset
 
 
 @dataclass
 class ScriptArguments:
-    reward_model_checkpoints: List[str] = field(
-        metadata={
-            "help": "Paths to the reward model checkpoints to use for evaluation."
-        }
-    )
-    reward_model_names: List[str] = field(
-        metadata={"help": "Names of the models to use for evaluation."}
-    )
     output: str = field(
         metadata={"help": "JSONL file for results."},
     )
@@ -46,7 +32,7 @@ class ScriptArguments:
     model_name: str = field(
         default="gpt2",
         metadata={
-            "help": "The model that you want to use as the basis for generation and for evaluation."
+            "help": "The model that you want to use for generation."
             "E.g. gpt2, gpt2-xl, bert, etc."
         },
     )
@@ -118,6 +104,7 @@ if __name__ == "__main__":
         prompt = system_prompt + prompt.lstrip()
         inputs = tokenizer(prompt, return_tensors="pt")
         responses: List[str] = []
+        attempts = 0
         while len(responses) < script_args.num_responses:
             response = ""
             generate_ids = inference_model.generate(
@@ -141,114 +128,21 @@ if __name__ == "__main__":
                 response = response.strip()
                 if len(response) >= 10 and ":" not in response:
                     responses.append(response)
+            attempts += 1
+            if attempts > 100:
+                break
         return {
             "prompt": prompt,
             "responses": responses[: script_args.num_responses],
         }
-
-    # def generate_responses_batch(examples_batch):
-    #     batch_prompts = []
-
-    #     for chosen in examples_batch["chosen"]:
-    #         prompt = chosen[: chosen.rindex("Assistant: ")] + "Assistant: "
-    #         system_prompt = "A chat between a curious user and an artificial intelligence assistant.\n\n"
-    #         prompt = system_prompt + prompt.lstrip()
-    #         batch_prompts.append(prompt)
-
-    #     inputs = tokenizer(
-    #         batch_prompts, return_tensors="pt", padding=True, truncation=True
-    #     )
-
-    #     all_responses: List[List[str]] = [[] for _ in range(len(batch_prompts))]
-
-    #     while any(
-    #         len(responses) < script_args.num_responses for responses in all_responses
-    #     ):
-    #         indices_that_need_more_responses = torch.tensor(
-    #             [
-    #                 prompt_index
-    #                 for prompt_index in range(len(batch_prompts))
-    #                 if len(all_responses[prompt_index]) < script_args.num_responses
-    #             ]
-    #         )
-    #         print(indices_that_need_more_responses)
-    #         generate_ids = inference_model.generate(
-    #             inputs.input_ids[indices_that_need_more_responses].cuda(),
-    #             max_new_tokens=128,
-    #             do_sample=True,
-    #             top_k=0,
-    #             temperature=0.6,
-    #             top_p=0.9,
-    #             no_repeat_ngram_size=5,
-    #         )
-    #         sampled_responses_batch: List[str] = tokenizer.batch_decode(
-    #             generate_ids,
-    #             skip_special_tokens=True,
-    #             clean_up_tokenization_spaces=True,
-    #         )
-
-    #         for prompt_index, prompt, sampled_response in zip(
-    #             indices_that_need_more_responses, batch_prompts, sampled_responses_batch
-    #         ):
-    #             response = sampled_response[len(prompt) :].strip()
-    #             if "\n\n" in response:
-    #                 response = response[: response.index("\n\n")]
-    #             response = response.strip()
-    #             if len(response) >= 10 and ":" not in response:
-    #                 all_responses[prompt_index].append(response)
-
-    #     return {
-    #         "prompt": batch_prompts,
-    #         "responses": [
-    #             responses[: script_args.num_responses] for responses in all_responses
-    #         ],
-    #     }
 
     print("Generating responses...")
     dataset = dataset.map(
         generate_responses,
         batched=False,
         remove_columns=["chosen", "rejected"],
-        # batch_size=script_args.batch_size,
-        num_proc=4,
+        # num_proc=2,
     )
-
-    print("Loading base reward model...")
-    base_reward_model = AutoModelForSequenceClassification.from_pretrained(
-        script_args.model_name,
-        num_labels=1,
-        torch_dtype=torch.bfloat16,
-    )
-
-    for model_name, checkpoint_path in zip(
-        script_args.reward_model_names, script_args.reward_model_checkpoints
-    ):
-        peft_config = LoraConfig.from_pretrained(checkpoint_path)
-        reward_model = PeftModel.from_pretrained(
-            base_reward_model, checkpoint_path, is_trainable=False
-        )
-        reward_model.cuda().eval()
-        reward_model.pad_token_id = tokenizer.pad_token_id
-
-        def evaluate_responses(example):
-            prompt = example["prompt"]
-            responses = example["responses"]
-            reward_outputs = []
-            for response in responses:
-                inputs = tokenizer(prompt.lstrip() + response, return_tensors="pt")
-                reward_output = reward_model(
-                    inputs.input_ids.cuda(), inputs.attention_mask.cuda()
-                )[0]
-                reward_outputs.append(reward_output[0].tolist())
-            return {
-                f"reward_outputs_{model_name}": reward_outputs,
-            }
-
-        print(f"Evaluating responses with {model_name}...")
-        dataset = dataset.map(
-            evaluate_responses,
-            batched=False,
-        )
 
     # Combine datasets and output to JSONL
     dataset.to_json(output_fname, orient="records", lines=True)
