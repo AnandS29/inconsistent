@@ -1,12 +1,12 @@
 import subprocess
 
 
-def test_toy_experiments(tmp_path):
+def test_synthetic_experiments(tmp_path):
     subprocess.check_call(
         [
             "python",
             "-m",
-            "hidden_context.toy_experiments",
+            "hidden_context.synthetic_experiments",
             "--env=1d",
             "--batch_size=8",
             "--lr=1e-4",
