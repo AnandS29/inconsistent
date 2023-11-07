@@ -21,7 +21,7 @@ jobs:
         uses: osbm/huggingface-login@v0.0.2
         with:
           username: ${{ secrets.HF_USERNAME }}
-          password: ${{ secrets.HF_PASSWORD }}
+          key: ${{ secrets.HF_KEY }}
           add_to_git_credentials: true
 
       - name: Install Python
