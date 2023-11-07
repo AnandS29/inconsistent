@@ -42,7 +42,7 @@ jobs:
           sudo apt-get install texlive-latex-recommended texlive-latex-extra dvipng cm-super
 
       - name: Login to HuggingFace Hub
-        uses: osbm/huggingface_login@v0.1
+        uses: osbm/huggingface-login@v0.0.2
         with:
           username: ${{ secrets.HF_USERNAME }}
           password: ${{ secrets.HF_PASSWORD }}
