@@ -17,6 +17,13 @@ jobs:
     steps:
       - uses: actions/checkout@v2
 
+      - name: Login to HuggingFace Hub
+        uses: osbm/huggingface-login@v0.0.2
+        with:
+          username: ${{ secrets.HF_USERNAME }}
+          password: ${{ secrets.HF_PASSWORD }}
+          add_to_git_credentials: true
+
       - name: Install Python
         uses: actions/setup-python@v2
         with:
@@ -40,13 +47,6 @@ jobs:
       - name: Install APT requirements
         run: |
           sudo apt-get install texlive-latex-recommended texlive-latex-extra dvipng cm-super
-
-      - name: Login to HuggingFace Hub
-        uses: osbm/huggingface-login@v0.0.2
-        with:
-          username: ${{ secrets.HF_USERNAME }}
-          password: ${{ secrets.HF_PASSWORD }}
-          add_to_git_credentials: true
 
       - name: Run flake8
         run: flake8 hidden_context tests
