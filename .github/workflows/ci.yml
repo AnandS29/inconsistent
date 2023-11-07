@@ -41,6 +41,13 @@ jobs:
         run: |
           sudo apt-get install texlive-latex-recommended texlive-latex-extra dvipng cm-super
 
+      - name: Login to HuggingFace Hub
+        uses: osbm/huggingface_login@v0.1
+        with:
+          username: ${{ secrets.HF_USERNAME }}
+          password: ${{ secrets.HF_PASSWORD }}
+          add_to_git_credentials: true
+
       - name: Run flake8
         run: flake8 hidden_context tests
         if: ${{ always() }}
@@ -62,4 +69,4 @@ jobs:
         if: ${{ always() }}
         timeout-minutes: 10
         run: |
-          pytest -m "not uses_huggingface" --log-cli-level=INFO
+          pytest --log-cli-level=INFO
