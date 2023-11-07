@@ -1,6 +1,6 @@
 # Hidden Context in Preference Learning
 
-This repository contains code for the paper [Understanding Hidden Context in Preference Learning: Consequences for RLHF](TODO).
+This repository contains code for the paper [Understanding Hidden Context in Preference Learning: Consequences for RLHF](TODO). It includes an implementation of both variants of distributional preference learning (DPL) that we describe in the paper for training LLM-based reward models.
 
 ## Installation
 
@@ -28,7 +28,51 @@ Our data and pretrained models are included in the repository under the `data` d
 
 ## Running experiments
 
+### Synthetic data
 
+To run the distributional preference learning (DPL) experiments that use synthetic data, run
+
+    python -m hidden_context.synthetic_experiments --env 1d --batch_size 2048 --lr 0.001 --num_iterations 1000
+
+This should generate our Figure 1 in the directory `results/1d/2048_0.001_1000`.
+
+### Training LLM reward models with DPL
+
+To train a normal LLM reward model, run
+
+    python -m hidden_context.train_llm_preference_model --model_name=meta-llama/Llama-2-7b-hf --num_train_epochs=1 --reward_model_type=base --data_subset=both
+
+  * To train using DPL, specify either `--reward_model_type=mean_and_variance` or `--reward_model_type=categorical` depending on which variant you want.
+  * To train on our relabeled HH-RLHF data, add `--data_path=data/relabeled_hh_rlhf`.
+  * You can specify either `--data_subset=both`, `--data_subset=helpful`, or `--data_subset=harmless` to train on just the harmlessness-labeled data, just the helpfulness-labeled data, or all data. Note that we use 2 training epochs when training on just the harmlessness subset or just the helpfulness subset to maintain the same number of overall training steps.
+
+### Evaluating LLM reward models on HH-RLHF
+
+To evaluate an LLM reward model once it's trained, run
+
+    python -m hidden_context.evlauate_llm_preference_model --model_name=meta-llama/Llama-2-7b-hf --num_outputs=1 --reward_model_checkpoint=PATH/TO/last_checkpoint
+
+  * Replace `PATH/TO/last_checkpoint` with the checkpoint directory to evaluate.
+  * The `--num_outputs` argument should be set to 2 for mean-and-variance DPL models and to 10 for categorical DPL models. This is because these models output, respectively, 2 numbers (mean and variance) and 10 numbers (logits for each of the 10 reward buckets).
+
+This script will produce a file called `eval_results_both.jsonl` in the checkpoint folder with the raw outputs of the reward model for each of the response pairs in the HH-RLHF test set.
+
+### Evaluating LLM reward models on jailbreaks
+
+To evaluate an LLM reward model on responses to the Jailbroken prompts, run
+
+    python -m hidden_context.evaluate_assistant_responses --input=data/jailbroken_responses.jsonl --model_name=meta-llama/Llama-2-7b-hf --num_outputs=1 --reward_model_checkpoints PATH_1/TO/last_checkpoint PATH_2/TO/last_checkpoint --reward_model_names model_1 model_2 --output PATH/TO/output.jsonl
+
+  * This will load each of the given reward model checkpoints and evaluate them. The results will be saved in `PATH/TO/output.jsonl` and each reward model's outputs will be stored according to the names given after `--reward_model_names`.
+  * The `--num_outputs` argument should be set to 2 for mean-and-variance DPL models and to 10 for categorical DPL models. This is because these models output, respectively, 2 numbers (mean and variance) and 10 numbers (logits for each of the 10 reward buckets).
+
+### Analyzing evaluations
+
+To obtain the results highlighted in the paper on DPL with LLM reward models, run
+
+    python -m hidden_context.summarize_results
+
+This will load the data from our experiments (as output from the evaluation scripts above) and summarize it into the numbers we reported in the paper. This script shows how we translate the raw output of the reward models to calculate *r²* values for a DPL reward model; it also shows how we calculated risk-sensitive rewards to evaluate DPL models on the Jailbroken prompts.
 
 ## Linting/formatting/type checking/testing
 
