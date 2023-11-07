@@ -39,10 +39,10 @@ class ScriptArguments:
             "if the model that you want to train doesn't fit on a single GPU."
         },
     )
-    per_device_train_batch_size: int = field(default=4)
+    per_device_train_batch_size: int = field(default=2)
     per_device_eval_batch_size: int = field(default=1)
     gradient_accumulation_steps: int = field(default=1)
-    learning_rate: float = field(default=2e-5)
+    learning_rate: float = field(default=3e-6)
     weight_decay: float = field(default=0.001)
     model_name: str = field(
         default="gpt2",
@@ -75,7 +75,7 @@ class ScriptArguments:
         },
     )
     entropy_coeff: float = field(
-        default=0.0,
+        default=0.1,
         metadata={"help": "The entropy coefficient for the categorical reward model."},
     )
     variance_penalty: float = field(
@@ -119,7 +119,7 @@ class ScriptArguments:
         metadata={"help": "The optimizer to use."},
     )
     lr_scheduler_type: str = field(
-        default="linear",
+        default="cosine",
         metadata={"help": "The lr scheduler"},
     )
     max_length: int = field(default=1024)
@@ -127,7 +127,7 @@ class ScriptArguments:
         default=False,
         metadata={"help": "Whether to run eval after the first step"},
     )
-    log_dir: str = field(default="data/logs")
+    log_dir: str = field(default="data/reward_models/hh_rlhf")
 
 
 class HHRLHFPreprocessor(object):
@@ -374,7 +374,7 @@ if __name__ == "__main__":
     # are using deepspeed.
     model_name_split = script_args.model_name.split("/")[-1]
     output_name = (
-        f"{script_args.log_dir}/hh-rlhf/{data_subset}/"
+        f"{script_args.log_dir}/{data_subset}/"
         f"{reward_model_type}_{model_name_split}"
         f"__{script_args.train_dataset_size}_{script_args.learning_rate}"
         f"_{script_args.lr_scheduler_type}_{script_args.num_train_epochs}"

@@ -38,7 +38,7 @@ def test_evaluate_assistant_responses(tmp_path):
         ("categorical", 10),
     ]:
         checkpoint_dir = glob.glob(
-            f"data/logs/both/{reward_model_type}_gpt2_*_peft_last_checkpoint"
+            f"data/reward_models/hh_rlhf/both/{reward_model_type}_gpt2_*_peft_last_checkpoint"
         )[0]
         subprocess.check_call(
             [
@@ -49,7 +49,7 @@ def test_evaluate_assistant_responses(tmp_path):
                 "--model_name=gpt2",
                 f"--reward_model_checkpoints={checkpoint_dir}",
                 f"--reward_model_names={reward_model_type}",
-                f"--num_labels={num_labels}",
+                f"--num_outputs={num_labels}",
                 "--bf16=false",
                 f"--output={tmp_path}/results_{reward_model_type}.jsonl",
             ],
@@ -71,7 +71,7 @@ def test_evaluate_llm_preference_model(tmp_path):
         ("categorical", 10),
     ]:
         checkpoint_dir = glob.glob(
-            f"data/logs/both/{reward_model_type}_gpt2_*_peft_last_checkpoint"
+            f"data/reward_models/hh_rlhf/both/{reward_model_type}_gpt2_*_peft_last_checkpoint"
         )[0]
         subprocess.check_call(
             [
@@ -82,7 +82,7 @@ def test_evaluate_llm_preference_model(tmp_path):
                 "--eval_dataset_size=8",
                 "--model_name=gpt2",
                 f"--reward_model_checkpoint={checkpoint_dir}",
-                f"--num_labels={num_labels}",
+                f"--num_outputs={num_labels}",
                 "--bf16=false",
                 f"--output={tmp_path}/eval_{reward_model_type}.jsonl",
             ],

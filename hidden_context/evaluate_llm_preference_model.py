@@ -49,7 +49,7 @@ class ScriptArguments:
         default=0,
         metadata={"help": "The size of the subset of the eval data to use"},
     )
-    num_labels: int = field(
+    num_outputs: int = field(
         default=1,
         metadata={"help": "The number of outputs from the model."},
     )
@@ -93,7 +93,7 @@ if __name__ == "__main__":
         model_kwargs["torch_dtype"] = torch.bfloat16
     model = AutoModelForSequenceClassification.from_pretrained(
         script_args.model_name,
-        num_labels=script_args.num_labels,
+        num_labels=script_args.num_outputs,
         **model_kwargs,
     )
     model = PeftModel.from_pretrained(

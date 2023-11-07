@@ -43,7 +43,7 @@ class ScriptArguments:
             "for your model",
         },
     )
-    num_labels: int = field(default=1)
+    num_outputs: int = field(default=1)
     max_length: int = field(default=1024)
     bf16: bool = field(
         default=True,
@@ -80,7 +80,7 @@ if __name__ == "__main__":
         model_kwargs["torch_dtype"] = torch.bfloat16
     base_reward_model = AutoModelForSequenceClassification.from_pretrained(
         script_args.model_name,
-        num_labels=script_args.num_labels,
+        num_labels=script_args.num_outputs,
         **model_kwargs,
     )
 
