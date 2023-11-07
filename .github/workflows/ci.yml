@@ -17,13 +17,6 @@ jobs:
     steps:
       - uses: actions/checkout@v2
 
-      - name: Login to HuggingFace Hub
-        uses: osbm/huggingface-login@v0.0.2
-        with:
-          username: ${{ secrets.HF_USERNAME }}
-          key: ${{ secrets.HF_KEY }}
-          add_to_git_credentials: true
-
       - name: Install Python
         uses: actions/setup-python@v2
         with:
@@ -69,4 +62,4 @@ jobs:
         if: ${{ always() }}
         timeout-minutes: 10
         run: |
-          pytest --log-cli-level=INFO
+          pytest -m "not uses_huggingface" --log-cli-level=INFO
